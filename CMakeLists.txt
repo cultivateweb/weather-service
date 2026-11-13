@@ -41,3 +41,10 @@ add_executable(test_service tests/test_service.c)
 target_link_libraries(test_service PRIVATE core)
 add_test(NAME service COMMAND test_service)
 set_tests_properties(service PROPERTIES TIMEOUT 60)
+
+# Тест программы целиком: запуск, остановка, ошибки при старте.
+add_executable(test_main tests/test_main.c)
+target_link_libraries(test_main PRIVATE PkgConfig::DEPS)
+add_test(NAME main COMMAND test_main $<TARGET_FILE:weather_service>
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/config.env)
+set_tests_properties(main PROPERTIES TIMEOUT 60)
