@@ -155,8 +155,13 @@ static enum MHD_Result handle(void *cls, struct MHD_Connection *conn,
     }
 
     /* Запрос получен целиком, можно отвечать. */
-    if (strcmp(url, "/health") == 0 && strcmp(method, "GET") == 0) {
-        cJSON *ok = cJSON_CreateObject();
+    if (strcmp(url, "/health") == 0) {
+        cJSON *ok;
+
+        /* HEAD — тот же GET, только без тела ответа (тело убирает microhttpd). */
+        if (strcmp(method, "GET") != 0 && strcmp(method, "HEAD") != 0)
+            return reply_wrong_method(conn, "GET, HEAD");
+        ok = cJSON_CreateObject();
         cJSON_AddStringToObject(ok, "status", "ok");
         return reply(conn, 200, ok);
     }

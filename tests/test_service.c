@@ -320,6 +320,10 @@ int main(void)
     r = http("GET", "/health", NULL);
     CHECK(r.status == 200);
     CHECK(json_str_is(r.body, "status", "ok"));
+    CHECK(http("HEAD", "/health", NULL).status == 200);   /* HEAD — тот же GET без тела */
+    r = http("POST", "/health", NULL);
+    CHECK(r.status == 405);                               /* адрес есть, метод не тот */
+    CHECK(strcmp(r.allow, "GET, HEAD") == 0);
     CHECK(http("GET", "/nope", NULL).status == 404);
     r = http("GET", "/weather", NULL);
     CHECK(r.status == 405);
