@@ -1,5 +1,7 @@
-# Папки сборки: cmake -B build, cmake -B build-check
+# Папки сборки: cmake -B build, cmake -B build-check, scripts/build-static.sh;
+# out — файл программы из docker build --target file --output out .
 build*/
+out/
 
 # Что создаёт запущенный сервис (LOG_PATH из config.env)
 service.log

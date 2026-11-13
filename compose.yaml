@@ -1,11 +1,12 @@
-# База PostgreSQL для журнала сервиса.
+# Сервис погоды (app) и база PostgreSQL для его журнала (db).
 #
 #   1. Один раз — пароль базы в файл .env (он не попадает в git):
 #        echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env
-#   2. Запуск:     docker compose up -d
-#      Остановка:  docker compose down      (записи журнала сохраняются)
+#   2. Запуск всего:     docker compose up -d --build
+#      Только база:      docker compose up -d db     (если сервис запускаешь сам)
+#      Остановка:        docker compose down         (записи журнала сохраняются)
 #
-# База видна только с этого компьютера: 127.0.0.1:5432.
+# Сервис и база видны только с этого компьютера: 127.0.0.1:8080 и 127.0.0.1:5432.
 
 services:
   db:
@@ -23,6 +24,19 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: weather-service
+    depends_on:
+      db:
+        condition: service_healthy         # сервис стартует, когда база готова
+    environment:
+      DB_URL: postgresql://weather@db:5432/weather
+      PGPASSWORD: ${POSTGRES_PASSWORD:?нет пароля базы - создай файл .env, как написано в начале compose.yaml}
+    ports:
+      - "127.0.0.1:8080:8080"
     restart: unless-stopped
 
 volumes:

@@ -123,7 +123,7 @@ curl -d '{"city":"Київ"}' http://localhost:8080/weather
 
 ```sh
 echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env   # один раз: пароль базы
-docker compose up -d
+docker compose up -d db
 ```
 
 Пароль лежит в файле `.env`, в git он не попадает. Запуск сервиса с журналом в базе:
@@ -141,6 +141,26 @@ TEST_DB_URL=postgresql://weather@127.0.0.1:5432/weather ctest --test-dir build -
 
 Если связь с базой оборвалась, журнал переподключается сам. Пока базы нет,
 строки идут только на экран и в файл.
+
+## Docker: сервис вместе с базой
+
+```sh
+echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env   # один раз, если .env ещё нет
+docker compose up -d --build
+curl -d '{"city":"Київ"}' http://localhost:8080/weather
+docker compose logs app       # журнал сервиса
+docker compose down           # остановить; записи журнала в базе сохраняются
+```
+
+Образ сервиса собирается из исходников тем же `scripts/build-static.sh`, а сам
+он пустой: в нём лежит только файл программы — ни оболочки, ни библиотек.
+Так видно, что одного файла программе достаточно.
+
+Только файл программы, без образа (появится в `out/weather_service`):
+
+```sh
+docker build --target file --output out .
+```
 
 ## Журнал
 
@@ -167,4 +187,4 @@ ctest --test-dir build-check --output-on-failure
 Сервис принимает запросы со всех сетевых адресов компьютера, пароля нет.
 Брандмауэр Fedora Workstation по умолчанию пропускает порты выше 1024, поэтому
 запущенный сервис видят другие устройства в той же сети.
-База из `compose.yaml` видна только с этого компьютера (адрес 127.0.0.1).
+Сервис и база из `compose.yaml` видны только с этого компьютера (адрес 127.0.0.1).
