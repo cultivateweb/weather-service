@@ -83,9 +83,10 @@ jobs:
           cat answer.json
           echo
           grep -q '"country"' answer.json
+          # Ответ приходит по-украински («Київ»), а запрос пишется в журнал как есть.
           rows=$(docker compose exec -T db psql -U weather -d weather -tAc \
-                 "SELECT count(*) FROM logs WHERE message LIKE 'answer: Kyiv%'")
-          echo "строк журнала в базе про ответ: $rows"
+                 "SELECT count(*) FROM logs WHERE message = 'request: city=Kyiv'")
+          echo "строк журнала в базе про этот запрос: $rows"
           test "$rows" -ge 1
 
       - name: Журналы контейнеров, если что-то не так
