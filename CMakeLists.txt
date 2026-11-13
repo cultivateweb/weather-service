@@ -7,13 +7,14 @@ set(CMAKE_C_STANDARD 11)
 add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Werror)
 
 # Проверка памяти: cmake -B build-check -DSANITIZE=ON
+# (с gcc на Fedora нужны пакеты libasan и libubsan; с clang — ничего: CC=clang cmake ...)
 option(SANITIZE "Build with AddressSanitizer and UBSan" OFF)
 if(SANITIZE)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
-# Внешние библиотеки (на Ubuntu/Debian ставятся через apt).
+# Внешние библиотеки. Как поставить их на Fedora и на Ubuntu/Debian — в README.md.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET libmicrohttpd libcurl sqlite3 libcjson)
 find_package(Threads REQUIRED)    # потоки: сервер обслуживает запросы параллельно
