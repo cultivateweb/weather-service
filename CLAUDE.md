@@ -30,3 +30,6 @@ everything in C, tests included). README.md (Russian) is the user guide.
 - postgres:18 images keep data under `/var/lib/postgresql` — mount that, not `.../data`.
 - In shell checks start a service directly (`prog & PID=$!`), not `cd dir && prog &`:
   then `$!` is a subshell, and SIGINT never reaches the service.
+- Open-Meteo often times out from GitHub runners (3 of 5 runs on 2026-11-13; the runner
+  itself could not reach it either). The CI smoke step then asks the site from the runner
+  and only warns; red means the runner got an answer and the image did not.
