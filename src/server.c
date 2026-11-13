@@ -171,6 +171,15 @@ Server *server_start(int port)
     return s;
 }
 
+int server_port(const Server *s)
+{
+    const union MHD_DaemonInfo *info;
+
+    if (!s) return 0;
+    info = MHD_get_daemon_info(s->daemon, MHD_DAEMON_INFO_BIND_PORT);
+    return info ? info->port : 0;
+}
+
 void server_stop(Server *s)
 {
     if (!s) return;

@@ -35,3 +35,9 @@ enable_testing()
 add_executable(test_config tests/test_config.c)
 target_link_libraries(test_config PRIVATE core)
 add_test(NAME config COMMAND test_config)
+
+# Сквозной тест: настоящий сервер + подставной погодный сайт, без интернета.
+add_executable(test_service tests/test_service.c)
+target_link_libraries(test_service PRIVATE core)
+add_test(NAME service COMMAND test_service)
+set_tests_properties(service PROPERTIES TIMEOUT 60)
