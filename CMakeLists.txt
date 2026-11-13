@@ -1,0 +1,37 @@
+cmake_minimum_required(VERSION 3.16)
+project(weather_service C)
+
+set(CMAKE_C_STANDARD 11)
+
+# Строгая сборка: любое предупреждение компилятора считается ошибкой.
+add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Werror)
+
+# Проверка памяти: cmake -B build-check -DSANITIZE=ON
+option(SANITIZE "Build with AddressSanitizer and UBSan" OFF)
+if(SANITIZE)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
+# Внешние библиотеки (на Ubuntu/Debian ставятся через apt).
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET libmicrohttpd libcurl sqlite3 libcjson)
+
+# Все модули собираются в одну библиотеку core.
+add_library(core
+  src/config.c
+  src/logger.c
+  src/server.c
+  src/weather.c)
+target_include_directories(core PUBLIC src)
+target_link_libraries(core PUBLIC PkgConfig::DEPS)
+
+# Программа: только main.c плюс библиотека.
+add_executable(weather_service src/main.c)
+target_link_libraries(weather_service PRIVATE core)
+
+# Тесты берут ту же библиотеку: ctest --test-dir build
+enable_testing()
+add_executable(test_config tests/test_config.c)
+target_link_libraries(test_config PRIVATE core)
+add_test(NAME config COMMAND test_config)
