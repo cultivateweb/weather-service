@@ -1,0 +1,106 @@
+# Автоматические тесты. GitHub запускает их при каждой отправке изменений (push)
+# и для каждого запроса на слияние (pull request). Результат — на вкладке Actions.
+
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:          # кнопка «Run workflow» на сайте
+
+permissions:
+  contents: read              # тестам достаточно читать код
+
+jobs:
+  system:
+    name: Ubuntu, библиотеки системы
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:               # временная база для теста db, живёт только пока идут тесты
+        image: postgres:18-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust   # без пароля: снаружи этой машины её не видно
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      TEST_DB_URL: postgresql://postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Библиотеки — те же пакеты, что в README.md
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkgconf libmicrohttpd-dev libcurl4-openssl-dev libpq-dev libcjson-dev
+
+      - name: Сборка и тесты
+        run: |
+          cmake -B build
+          cmake --build build -j
+          ctest --test-dir build --output-on-failure
+
+      - name: Проверка памяти (AddressSanitizer и UBSan)
+        run: |
+          cmake -B build-check -DSANITIZE=ON
+          cmake --build build-check -j
+          ctest --test-dir build-check --output-on-failure
+
+  docker:
+    name: Docker, один файл из исходников
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Сборка образа (библиотеки берутся из кэша, пока скрипт сборки не менялся)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: weather-service
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Сервис и база через compose
+        run: |
+          echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env
+          docker compose up -d --no-build --wait
+
+      - name: Сервис отвечает, сайт погоды доступен, журнал пишется в базу
+        run: |
+          for i in $(seq 30); do curl -sf http://127.0.0.1:8080/health && break; sleep 1; done
+          echo
+          # Настоящий запрос к Open-Meteo: проверяет шифрование и поиск адресов
+          # в пустом образе. Три попытки — на случай, если сайт на миг недоступен.
+          for i in 1 2 3; do
+            curl -sf -o answer.json -d '{"city":"Kyiv"}' http://127.0.0.1:8080/weather && break
+            sleep 5
+          done
+          cat answer.json
+          echo
+          grep -q '"country"' answer.json
+          rows=$(docker compose exec -T db psql -U weather -d weather -tAc \
+                 "SELECT count(*) FROM logs WHERE message LIKE 'answer: Kyiv%'")
+          echo "строк журнала в базе про ответ: $rows"
+          test "$rows" -ge 1
+
+      - name: Журналы контейнеров, если что-то не так
+        if: failure()
+        run: docker compose logs
+
+      - name: Достать файл программы из образа
+        run: |
+          mkdir out
+          id=$(docker create weather-service)
+          docker cp "$id:/weather_service" out/
+          docker rm "$id"
+
+      - name: Файл программы — в результаты запуска (Artifacts)
+        uses: actions/upload-artifact@v7
+        with:
+          name: weather_service-linux-x86_64
+          path: out/weather_service
