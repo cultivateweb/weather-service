@@ -321,7 +321,9 @@ int main(void)
     CHECK(r.status == 200);
     CHECK(json_str_is(r.body, "status", "ok"));
     CHECK(http("GET", "/nope", NULL).status == 404);
-    CHECK(http("GET", "/weather", NULL).status == 405);
+    r = http("GET", "/weather", NULL);
+    CHECK(r.status == 405);
+    CHECK(strcmp(r.allow, "POST") == 0);                  /* подсказка, какой метод нужен */
 
     /* Плохие запросы */
     r = http("POST", "/weather", NULL);

@@ -24,8 +24,10 @@ struct Server {
 
 /* ---------- Ответы ---------- */
 
-/* Отправляет JSON-ответ и освобождает obj. */
-static enum MHD_Result reply(struct MHD_Connection *conn, unsigned int status, cJSON *obj)
+/* Отправляет JSON-ответ и освобождает obj.
+   allow — только для ответа 405: какие методы можно (в остальных случаях NULL). */
+static enum MHD_Result send_json(struct MHD_Connection *conn, unsigned int status,
+                                 cJSON *obj, const char *allow)
 {
     char                *text = cJSON_PrintUnformatted(obj);
     struct MHD_Response *resp;
@@ -35,6 +37,7 @@ static enum MHD_Result reply(struct MHD_Connection *conn, unsigned int status, c
         resp = MHD_create_response_from_buffer(strlen(text), text, MHD_RESPMEM_MUST_COPY);
         if (resp) {
             MHD_add_response_header(resp, "Content-Type", "application/json");
+            if (allow) MHD_add_response_header(resp, "Allow", allow);
             ret = MHD_queue_response(conn, status, resp);
             MHD_destroy_response(resp);
         }
@@ -44,12 +47,29 @@ static enum MHD_Result reply(struct MHD_Connection *conn, unsigned int status, c
     return ret;
 }
 
+static enum MHD_Result reply(struct MHD_Connection *conn, unsigned int status, cJSON *obj)
+{
+    return send_json(conn, status, obj, NULL);
+}
+
 static enum MHD_Result reply_error(struct MHD_Connection *conn, unsigned int status, const char *msg)
 {
     cJSON *obj = cJSON_CreateObject();
 
     cJSON_AddStringToObject(obj, "error", msg);
     return reply(conn, status, obj);
+}
+
+/* 405 «метод не разрешён». Правила HTTP требуют сказать в заголовке Allow,
+   какие методы можно: по нему клиент сам поймёт, как надо. */
+static enum MHD_Result reply_wrong_method(struct MHD_Connection *conn, const char *allow)
+{
+    cJSON *obj = cJSON_CreateObject();
+    char   msg[64];
+
+    snprintf(msg, sizeof msg, "use %s", allow);
+    cJSON_AddStringToObject(obj, "error", msg);
+    return send_json(conn, 405, obj, allow);
 }
 
 /* ---------- Обработка запросов ---------- */
@@ -141,7 +161,7 @@ static enum MHD_Result handle(void *cls, struct MHD_Connection *conn,
         return reply(conn, 200, ok);
     }
     if (strcmp(url, "/weather") == 0) {
-        if (strcmp(method, "POST") != 0) return reply_error(conn, 405, "use POST");
+        if (strcmp(method, "POST") != 0) return reply_wrong_method(conn, "POST");
         if (body->too_big)               return reply_error(conn, 413, "request is too big");
         return handle_weather(conn, body->data);
     }
