@@ -14,10 +14,30 @@ if(SANITIZE)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
+# Один файл со всем внутри, без библиотек системы: cmake -DSTATIC=ON.
+# Нужны библиотеки в виде .a — scripts/build-static.sh собирает их из исходников.
+option(STATIC "Link everything into one self-contained program" OFF)
+
+# Файл со списком центров сертификации (PEM), который зашивается в программу.
+# Пусто — программа берёт такой список из системы.
+set(CA_BUNDLE "" CACHE FILEPATH "PEM file with CA certificates to embed into the program")
+
 # Внешние библиотеки. Как поставить их на Fedora и на Ubuntu/Debian — в README.md.
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET libmicrohttpd libcurl libpq libcjson)
 find_package(Threads REQUIRED)    # потоки: сервер обслуживает запросы параллельно
+set(DEPS_MODULES libmicrohttpd libcurl libpq libcjson)
+add_library(deps INTERFACE)
+if(STATIC)
+  # --static: pkg-config называет и библиотеки, нужные самим библиотекам.
+  pkg_check_modules(DEPS REQUIRED ${DEPS_MODULES})
+  target_include_directories(deps INTERFACE ${DEPS_STATIC_INCLUDE_DIRS})
+  target_compile_options(deps INTERFACE ${DEPS_STATIC_CFLAGS_OTHER})
+  target_link_libraries(deps INTERFACE ${DEPS_STATIC_LDFLAGS})
+  target_link_options(deps INTERFACE -static)
+else()
+  pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET ${DEPS_MODULES})
+  target_link_libraries(deps INTERFACE PkgConfig::DEPS)
+endif()
 
 # Все модули собираются в одну библиотеку core.
 add_library(core
@@ -26,7 +46,19 @@ add_library(core
   src/server.c
   src/weather.c)
 target_include_directories(core PUBLIC src)
-target_link_libraries(core PUBLIC PkgConfig::DEPS Threads::Threads)
+target_link_libraries(core PUBLIC deps Threads::Threads)
+
+if(CA_BUNDLE)
+  # Список центров сертификации становится массивом байт в программе.
+  file(READ "${CA_BUNDLE}" ca_hex HEX)
+  string(REGEX REPLACE "(..)" "0x\\1," ca_bytes "${ca_hex}")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ca_bundle.c"
+       "#include <stddef.h>\n"
+       "const unsigned char ca_bundle[] = {${ca_bytes}};\n"
+       "const size_t ca_bundle_size = sizeof ca_bundle;\n")
+  target_sources(core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ca_bundle.c")
+  target_compile_definitions(core PRIVATE HAVE_CA_BUNDLE)
+endif()
 
 # Программа: только main.c плюс библиотека.
 add_executable(weather_service src/main.c)
@@ -46,7 +78,7 @@ set_tests_properties(service PROPERTIES TIMEOUT 60)
 
 # Тест программы целиком: запуск, остановка, ошибки при старте.
 add_executable(test_main tests/test_main.c)
-target_link_libraries(test_main PRIVATE PkgConfig::DEPS)
+target_link_libraries(test_main PRIVATE deps)
 add_test(NAME main COMMAND test_main $<TARGET_FILE:weather_service>
                                      ${CMAKE_CURRENT_SOURCE_DIR}/config.env)
 set_tests_properties(main PROPERTIES TIMEOUT 60)

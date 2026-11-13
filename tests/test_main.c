@@ -3,6 +3,7 @@
  * как человек в терминале, и смотрим код выхода и что она пишет на экран.
  * Аргументы (их передаёт CMake): путь к программе и путь к config.env.
  */
+#include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <signal.h>
@@ -188,7 +189,10 @@ int main(int argc, char **argv)
     pid = start(cfg, port);
     CHECK(exit_code(pid) == 1);
     CHECK(out_has("cannot start server"));
-    CHECK(out_has("Address already in use"));        /* сказано, почему не запустился */
+    /* Сказано, почему не запустился. Текст причины даёт библиотека Си, а он у них
+       разный («Address already in use» в glibc, «Address in use» в musl), поэтому
+       берём его у той же библиотеки, с которой собран и сервис. */
+    CHECK(out_has(strerror(EADDRINUSE)));
     CHECK(!out_has("stopped"));                      /* и не врёт, что «остановился» */
     if (fd >= 0) close(fd);
 

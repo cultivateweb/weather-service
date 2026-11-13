@@ -11,6 +11,14 @@
 
 #include "logger.h"
 
+#ifdef HAVE_CA_BUNDLE
+/* Список центров сертификации, зашитый в программу (CMake, настройка CA_BUNDLE):
+   по нему curl проверяет, что говорит с настоящим погодным сайтом. Так
+   программе не нужен такой список в системе, и она работает даже на пустой ОС. */
+extern const unsigned char ca_bundle[];
+extern const size_t        ca_bundle_size;
+#endif
+
 #define URL_MAX      256
 #define MAX_RESPONSE (1024u * 1024u)   /* больше 1 МБ от погодного API не берём */
 #define POOL_MAX     8                 /* столько свободных подключений держим про запас */
@@ -108,6 +116,13 @@ static char *http_get(CURL *curl, const char *url)
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);     /* запросы идут из нескольких потоков */
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, on_progress);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);   /* без этого on_progress не вызывается */
+#ifdef HAVE_CA_BUNDLE
+    {
+        struct curl_blob ca = { (void *)ca_bundle, ca_bundle_size, CURL_BLOB_NOCOPY };
+
+        curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &ca);
+    }
+#endif
 
     rc = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
