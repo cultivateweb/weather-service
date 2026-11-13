@@ -78,13 +78,24 @@ static pid_t start(const char *cfg, int port)
     return pid;
 }
 
-/* Ждёт конца программы. Код выхода; -1, если её убил сигнал или процесса нет. */
+/* Ждёт конца программы, но не дольше 10 секунд. Возвращает код выхода;
+   -1 — процесса нет или его убил сигнал; -2 — не закончилась вовремя
+   (тогда её убиваем сами, чтобы тест не завис). */
 static int exit_code(pid_t pid)
 {
-    int status;
+    int status, i;
 
-    if (pid <= 0 || waitpid(pid, &status, 0) != pid) return -1;
-    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    if (pid <= 0) return -1;
+    for (i = 0; i < 100; i++) {
+        pid_t r = waitpid(pid, &status, WNOHANG);
+
+        if (r == pid) return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        if (r < 0) return -1;
+        pause_ms(100);
+    }
+    kill(pid, SIGKILL);
+    waitpid(pid, &status, 0);
+    return -2;
 }
 
 static char *read_out(void)
@@ -177,6 +188,11 @@ int main(int argc, char **argv)
     CHECK(exit_code(pid) == 1);
     CHECK(out_has("cannot start server"));
     if (fd >= 0) close(fd);
+
+    /* 3) Файл настроек указан явно, но его нет (опечатка в имени): ошибка. */
+    pid = start("no-such-config.env", port);
+    CHECK(exit_code(pid) == 1);
+    CHECK(out_has("no-such-config.env"));
 
     curl_global_cleanup();
     if (failures) {

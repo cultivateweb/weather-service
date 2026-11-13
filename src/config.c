@@ -104,7 +104,7 @@ static int read_file(Config *c, FILE *f, const char *path)
     return 0;
 }
 
-int config_load(Config *c, const char *path)
+int config_load(Config *c, const char *path, int required)
 {
     FILE  *f;
     size_t i;
@@ -117,13 +117,21 @@ int config_load(Config *c, const char *path)
     snprintf(c->geo_url, CONFIG_STR_MAX, "https://geocoding-api.open-meteo.com/v1/search");
     snprintf(c->geo_language, sizeof c->geo_language, "uk");
 
-    /* 1) Файл. Если его нет, работаем на значениях по умолчанию. */
+    /* 1) Файл. */
     f = fopen(path, "r");
     if (f) {
         int rc = read_file(c, f, path);
 
         fclose(f);
         if (rc != 0) return -1;
+    } else {
+        int err = errno;                         /* fprintf может errno поменять */
+
+        if (err != ENOENT || required) {         /* нет доступа, или нет файла, который просили */
+            fprintf(stderr, "config: cannot open %s: %s\n", path, strerror(err));
+            return -1;
+        }
+        fprintf(stderr, "config: %s not found, using defaults and environment variables\n", path);
     }
 
     /* 2) Переменные окружения важнее файла (удобно для облака). */

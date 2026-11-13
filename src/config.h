@@ -15,7 +15,9 @@ typedef struct {
 } Config;
 
 /* Сначала значения по умолчанию, потом файл, потом переменные окружения.
+   required = 1: файл обязан быть (его путь указали явно, и опечатка в нём —
+   ошибка). required = 0: без файла работаем на значениях по умолчанию.
    Возвращает 0, если всё в порядке. */
-int config_load(Config *c, const char *path);
+int config_load(Config *c, const char *path, int required);
 
 #endif
