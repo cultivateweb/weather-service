@@ -309,7 +309,7 @@ int main(void)
     if (!fake) { fprintf(stderr, "fake weather API did not start\n"); return 1; }
     snprintf(geo, sizeof geo, "http://127.0.0.1:%u/search", fake_port);
     snprintf(forecast, sizeof forecast, "http://127.0.0.1:%u/forecast", fake_port);
-    if (weather_init(geo, forecast) != 0) return 1;
+    if (weather_init(geo, forecast, "uk") != 0) return 1;
 
     srv = server_start(0);
     if (!srv) return 1;
@@ -337,6 +337,11 @@ int main(void)
     CHECK(json_str_is(r.body, "city", "Kyiv"));
     CHECK(json_num_is(r.body, "temperature_c", 3.4));
     CHECK(json_num_is(r.body, "wind_kmh", 12.3));
+
+    /* Кириллица: сайт находит её, только если передан язык (у нас uk) */
+    r = http("POST", "/weather", "{\"city\":\"Київ\"}");
+    CHECK(r.status == 200);
+    CHECK(json_str_is(r.body, "city", "Київ"));
 
     /* Ошибки погодного сайта */
     CHECK(http("POST", "/weather", "{\"city\":\"Nowhere\"}").status == 404);

@@ -28,7 +28,7 @@ int main(int argc, char **argv)
     if (config_load(&cfg, cfg_path) != 0) return 1;
     if (log_open(cfg.log_path, cfg.db_path) != 0) return 1;
 
-    if (weather_init(cfg.geo_url, cfg.weather_url) != 0) goto done;
+    if (weather_init(cfg.geo_url, cfg.weather_url, cfg.geo_language) != 0) goto done;
     server = server_start(cfg.port);
     if (!server) goto done;
     log_msg("INFO", "started on port %d", cfg.port);

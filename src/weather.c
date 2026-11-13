@@ -19,6 +19,7 @@
 static int  g_ready;                   /* weather_init() прошёл успешно */
 static char g_geo_url[URL_MAX];
 static char g_weather_url[URL_MAX];
+static char g_language[8];
 
 /* 1 = сервис останавливается, идущие запросы надо прервать.
    atomic: флаг меняет один поток, а читают другие. */
@@ -113,7 +114,7 @@ static WeatherStatus geocode(CURL *curl, const char *city, char *name, size_t ca
     WeatherStatus rc = WEATHER_NOT_FOUND;
 
     if (!escaped) return WEATHER_ERROR;
-    snprintf(url, sizeof url, "%s?name=%s&count=1", g_geo_url, escaped);
+    snprintf(url, sizeof url, "%s?name=%s&count=1&language=%s", g_geo_url, escaped, g_language);
     curl_free(escaped);
 
     json = get_json(curl, url);
@@ -163,11 +164,15 @@ static WeatherStatus fetch_current(CURL *curl, double lat, double lon, double *t
 
 /* ---------- Открытый интерфейс (то, что объявлено в weather.h) ---------- */
 
-int weather_init(const char *geo_url, const char *weather_url)
+int weather_init(const char *geo_url, const char *weather_url, const char *language)
 {
     if (snprintf(g_geo_url, URL_MAX, "%s", geo_url) >= URL_MAX ||
         snprintf(g_weather_url, URL_MAX, "%s", weather_url) >= URL_MAX) {
         log_msg("ERROR", "weather: API address is too long");
+        return -1;
+    }
+    if (snprintf(g_language, sizeof g_language, "%s", language) >= (int)sizeof g_language) {
+        log_msg("ERROR", "weather: language code is too long");
         return -1;
     }
     /* Вызывается до запуска сервера, пока других потоков ещё нет. */

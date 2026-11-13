@@ -11,6 +11,7 @@ typedef struct {
     char log_path[CONFIG_STR_MAX];
     char weather_url[CONFIG_STR_MAX];
     char geo_url[CONFIG_STR_MAX];
+    char geo_language[3];           /* язык поиска города: две буквы, например uk */
 } Config;
 
 /* Сначала значения по умолчанию, потом файл, потом переменные окружения.

@@ -29,10 +29,12 @@ int main(void)
     unsetenv("LOG_PATH");
     unsetenv("WEATHER_URL");
     unsetenv("GEO_URL");
+    unsetenv("GEO_LANGUAGE");
 
     /* Файла нет: остаются значения по умолчанию. */
     CHECK(config_load(&c, "no-such-file.env") == 0);
     CHECK(c.port == 8080);
+    CHECK(strcmp(c.geo_language, "uk") == 0);
 
     /* Файл: комментарии пропускаются, пробелы вокруг убираются. */
     CHECK(write_file("test.env", "# comment\n  PORT = 9090 \nDB_PATH=x.db\n") == 0);
@@ -48,6 +50,17 @@ int main(void)
 
     /* Плохое значение: ошибка. */
     CHECK(write_file("test.env", "PORT=abc\n") == 0);
+    CHECK(config_load(&c, "test.env") != 0);
+
+    /* Язык поиска: только две строчные латинские буквы. */
+    CHECK(write_file("test.env", "GEO_LANGUAGE=ru\n") == 0);
+    CHECK(config_load(&c, "test.env") == 0);
+    CHECK(strcmp(c.geo_language, "ru") == 0);
+    CHECK(write_file("test.env", "GEO_LANGUAGE=russian\n") == 0);
+    CHECK(config_load(&c, "test.env") != 0);
+    CHECK(write_file("test.env", "GEO_LANGUAGE=RU\n") == 0);
+    CHECK(config_load(&c, "test.env") != 0);
+    CHECK(write_file("test.env", "GEO_LANGUAGE=u&\n") == 0);
     CHECK(config_load(&c, "test.env") != 0);
 
     remove("test.env");
