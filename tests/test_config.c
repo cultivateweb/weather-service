@@ -67,6 +67,26 @@ int main(void)
     CHECK(config_load(&c, "test.env") == 0);
     CHECK(c.port == 65535);
 
+    /* Опечатка в файле — ошибка, а не тихий пропуск. */
+    CHECK(write_file("test.env", "PROT=9000\n") == 0);                /* ключ с опечаткой */
+    CHECK(config_load(&c, "test.env") != 0);
+    CHECK(write_file("test.env", "PORT 9000\n") == 0);                /* забыли = */
+    CHECK(config_load(&c, "test.env") != 0);
+    {
+        char longline[700];                                          /* не влезает в буфер */
+
+        memset(longline, 'x', sizeof longline);
+        memcpy(longline, "# ", 2);
+        longline[sizeof longline - 2] = '\n';
+        longline[sizeof longline - 1] = '\0';
+        CHECK(write_file("test.env", longline) == 0);
+        CHECK(config_load(&c, "test.env") != 0);
+    }
+    /* Пустые строки, пробелы и комментарии — можно. */
+    CHECK(write_file("test.env", "\n# comment\n   \n\tPORT=9000\n") == 0);
+    CHECK(config_load(&c, "test.env") == 0);
+    CHECK(c.port == 9000);
+
     /* Язык поиска: только две строчные латинские буквы. */
     CHECK(write_file("test.env", "GEO_LANGUAGE=ru\n") == 0);
     CHECK(config_load(&c, "test.env") == 0);

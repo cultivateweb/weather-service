@@ -52,14 +52,60 @@ static int config_set(Config *c, const char *key, const char *val)
     else if (strcmp(key, "LOG_PATH") == 0)    dst = c->log_path;
     else if (strcmp(key, "WEATHER_URL") == 0) dst = c->weather_url;
     else if (strcmp(key, "GEO_URL") == 0)     dst = c->geo_url;
-    else return 0;                            /* незнакомые ключи пропускаем */
+    else return -1;                           /* незнакомый ключ */
 
     return snprintf(dst, CONFIG_STR_MAX, "%s", val) < CONFIG_STR_MAX ? 0 : -1;
 }
 
+static int is_known_key(const char *key)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof CONFIG_KEYS / sizeof *CONFIG_KEYS; i++)
+        if (strcmp(key, CONFIG_KEYS[i]) == 0) return 1;
+    return 0;
+}
+
+/* Читает строки вида КЛЮЧ=значение. Пустые строки и строки с # пропускает.
+   Опечатку не пропускает молча: иначе PROT=9000 тихо оставил бы порт 8080. */
+static int read_file(Config *c, FILE *f, const char *path)
+{
+    char line[512];
+    int  n = 0;                                  /* номер строки: для сообщения об ошибке */
+
+    while (fgets(line, sizeof line, f)) {
+        char *key, *eq;
+
+        n++;
+        /* Строка не влезла в буфер: её хвост прочитался бы как отдельная строка. */
+        if (!strchr(line, '\n') && !feof(f)) {
+            fprintf(stderr, "config: %s line %d: the line is too long\n", path, n);
+            return -1;
+        }
+        key = trim(line);
+        if (*key == '\0' || *key == '#') continue;
+
+        eq = strchr(key, '=');
+        if (!eq) {
+            fprintf(stderr, "config: %s line %d: expected KEY=value, got \"%s\"\n", path, n, key);
+            return -1;
+        }
+        *eq = '\0';
+        key = trim(key);
+        if (!is_known_key(key)) {
+            fprintf(stderr, "config: %s line %d: unknown setting %s\n", path, n, key);
+            return -1;
+        }
+        if (config_set(c, key, trim(eq + 1)) != 0) {
+            fprintf(stderr, "config: %s line %d: bad value for %s\n", path, n, key);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int config_load(Config *c, const char *path)
 {
-    char   line[512];
     FILE  *f;
     size_t i;
 
@@ -71,23 +117,13 @@ int config_load(Config *c, const char *path)
     snprintf(c->geo_url, CONFIG_STR_MAX, "https://geocoding-api.open-meteo.com/v1/search");
     snprintf(c->geo_language, sizeof c->geo_language, "uk");
 
-    /* 1) Файл: строки вида КЛЮЧ=значение, строки с # пропускаем.
-          Если файла нет, работаем на значениях по умолчанию. */
+    /* 1) Файл. Если его нет, работаем на значениях по умолчанию. */
     f = fopen(path, "r");
     if (f) {
-        while (fgets(line, sizeof line, f)) {
-            char *key = trim(line);
-            char *eq  = strchr(key, '=');
+        int rc = read_file(c, f, path);
 
-            if (*key == '#' || !eq) continue;
-            *eq = '\0';
-            if (config_set(c, trim(key), trim(eq + 1)) != 0) {
-                fprintf(stderr, "config: bad value for %s in %s\n", key, path);
-                fclose(f);
-                return -1;
-            }
-        }
         fclose(f);
+        if (rc != 0) return -1;
     }
 
     /* 2) Переменные окружения важнее файла (удобно для облака). */
