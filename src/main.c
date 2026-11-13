@@ -25,6 +25,11 @@ int main(int argc, char **argv)
     int         rc = 1;
     const char *cfg_path = argc > 1 ? argv[1] : "config.env";
 
+    /* Ловим сигналы остановки до запуска сервера: иначе сигнал, пришедший
+       в первые миллисекунды работы, убил бы программу без уборки. */
+    signal(SIGINT, on_signal);         /* Ctrl+C */
+    signal(SIGTERM, on_signal);        /* "вежливая" остановка из облака или Docker */
+
     /* Путь указали явно — файл обязан быть: опечатка в имени не пройдёт молча. */
     if (config_load(&cfg, cfg_path, argc > 1) != 0) return 1;
     if (log_open(cfg.log_path, cfg.db_path) != 0) return 1;
@@ -34,8 +39,6 @@ int main(int argc, char **argv)
     if (!server) goto done;
     log_msg("INFO", "started on port %d", cfg.port);
 
-    signal(SIGINT, on_signal);         /* Ctrl+C */
-    signal(SIGTERM, on_signal);        /* "вежливая" остановка из облака или Docker */
     while (!g_stop) sleep(1);
     rc = 0;
 

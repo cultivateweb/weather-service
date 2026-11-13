@@ -191,6 +191,21 @@ int main(int argc, char **argv)
     CHECK(!out_has("stopped"));                      /* и не врёт, что «остановился» */
     if (fd >= 0) close(fd);
 
+    /* 2б) Сигнал остановки сразу после запуска: программа всё равно
+           завершается аккуратно, а не умирает на полуслове. */
+    fd = listen_any(&port);
+    CHECK(fd >= 0);
+    if (fd >= 0) close(fd);
+    pid = start(cfg, port);
+    CHECK(pid > 0);
+    {
+        int i;
+
+        for (i = 0; i < 5000 && !out_has("started on port"); i++) pause_ms(1);
+    }
+    if (pid > 0) kill(pid, SIGTERM);
+    CHECK(exit_code(pid) == 0);
+
     /* 3) Файл настроек указан явно, но его нет (опечатка в имени): ошибка. */
     pid = start("no-such-config.env", port);
     CHECK(exit_code(pid) == 1);
