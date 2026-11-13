@@ -77,23 +77,31 @@ jobs:
           echo
           # Настоящий запрос к Open-Meteo: проверяет шифрование и поиск адресов
           # в пустом образе. Пять попыток через 10 секунд: с машин GitHub сайт
-          # бывает недоступен почти минуту.
+          # бывает недоступен минуту и дольше.
+          ask() { curl -sf -o answer.json -d '{"city":"Kyiv"}' http://127.0.0.1:8080/weather; }
           ok=
           for i in 1 2 3 4 5; do
-            if curl -sf -o answer.json -d '{"city":"Kyiv"}' http://127.0.0.1:8080/weather; then ok=1; break; fi
+            if ask; then ok=1; break; fi
             sleep 10
           done
+          if [ -z "$ok" ]; then
+            docker compose logs app | grep -F '[ERROR]' || true
+            # Чья беда — сайта или образа? Спрашиваем тот же сайт прямо с машины GitHub.
+            if curl -sf -m 10 -o /dev/null 'https://geocoding-api.open-meteo.com/v1/search?name=Kyiv' &&
+               curl -sf -m 10 -o /dev/null 'https://api.open-meteo.com/v1/forecast?latitude=50.45&longitude=30.52&current=temperature_2m'; then
+              # Машине сайт отвечает. Ещё попытка через сервис: мимо — значит, виноват образ.
+              if ask; then ok=1; else
+                echo "::error::Машине GitHub сайт погоды отвечает, а сервису в образе — нет"
+                exit 1
+              fi
+            else
+              echo "::warning::Сайт погоды не отвечает и самой машине GitHub, ответ сервиса не проверен"
+            fi
+          fi
           if [ -n "$ok" ]; then
             cat answer.json
             echo
             grep -q '"country"' answer.json
-          elif docker compose logs app | grep -F '[ERROR]' | grep -q -i -E 'ssl|certificate|resolv'; then
-            # Сертификат и поиск адреса — работа самого образа, значит, ошибка наша.
-            echo "::error::Сервис не смог проверить сертификат сайта погоды или найти его адрес"
-            exit 1
-          else
-            # Сайт чужой: если он молчит, сервис в этом не виноват.
-            echo "::warning::Сайт погоды не ответил машине GitHub, ответ не проверен"
           fi
           # Запрос пишется в журнал до похода на сайт погоды, поэтому эта проверка — всегда.
           # Ответ приходит по-украински («Київ»), а запрос записан как есть.
