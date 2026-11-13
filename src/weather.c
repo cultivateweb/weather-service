@@ -1,5 +1,6 @@
 #include "weather.h"
 
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,7 @@
 
 #define URL_MAX      256
 #define MAX_RESPONSE (1024u * 1024u)   /* больше 1 МБ от погодного API не берём */
+#define POOL_MAX     8                 /* столько свободных подключений держим про запас */
 
 /* Состояние модуля. static: снаружи его не видно.
    После weather_init() поля только читаются, поэтому потоки могут
@@ -24,6 +26,38 @@ static char g_language[8];
 /* 1 = сервис останавливается, идущие запросы надо прервать.
    atomic: флаг меняет один поток, а читают другие. */
 static atomic_int g_cancel;
+
+/* Запас свободных подключений libcurl. Новое шифрованное соединение
+   с сайтом — это около четверти секунды, а готовое отвечает в разы быстрее.
+   Поэтому после запроса подключение не закрываем, а кладём сюда для
+   следующего. Делить одно подключение между потоками нельзя, а передавать
+   из потока в поток можно: в каждый момент им пользуется только один. */
+static CURL           *g_pool[POOL_MAX];
+static int             g_pool_n;
+static pthread_mutex_t g_pool_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* Берёт свободное подключение из запаса или создаёт новое. */
+static CURL *handle_take(void)
+{
+    CURL *h = NULL;
+
+    pthread_mutex_lock(&g_pool_lock);
+    if (g_pool_n > 0) h = g_pool[--g_pool_n];
+    pthread_mutex_unlock(&g_pool_lock);
+    return h ? h : curl_easy_init();
+}
+
+/* Возвращает подключение в запас; если запас полон, закрывает его. */
+static void handle_give_back(CURL *h)
+{
+    pthread_mutex_lock(&g_pool_lock);
+    if (g_pool_n < POOL_MAX) {
+        g_pool[g_pool_n++] = h;
+        h = NULL;
+    }
+    pthread_mutex_unlock(&g_pool_lock);
+    if (h) curl_easy_cleanup(h);
+}
 
 /* ---------- Низкий уровень: HTTP ---------- */
 
@@ -198,8 +232,9 @@ WeatherStatus weather_lookup(const char *city, WeatherResult *out)
     if (!g_ready) return WEATHER_ERROR;           /* weather_init() не вызывали */
 
     /* Запросы приходят из разных потоков одновременно, а одно подключение
-       libcurl нельзя делить между потоками. Поэтому у каждого запроса своё. */
-    curl = curl_easy_init();
+       libcurl нельзя делить между потоками. Поэтому каждый запрос берёт
+       своё — из запаса или новое. */
+    curl = handle_take();
     if (!curl) {
         log_msg("ERROR", "weather: cannot create a libcurl handle");
         return WEATHER_ERROR;
@@ -207,7 +242,7 @@ WeatherStatus weather_lookup(const char *city, WeatherResult *out)
     st = geocode(curl, city, out, &lat, &lon);
     if (st == WEATHER_OK)
         st = fetch_current(curl, lat, lon, &out->temperature_c, &out->wind_kmh);
-    curl_easy_cleanup(curl);
+    handle_give_back(curl);
     return st;
 }
 
@@ -220,5 +255,8 @@ void weather_cleanup(void)
 {
     if (!g_ready) return;
     g_ready = 0;
+    pthread_mutex_lock(&g_pool_lock);
+    while (g_pool_n > 0) curl_easy_cleanup(g_pool[--g_pool_n]);
+    pthread_mutex_unlock(&g_pool_lock);
     curl_global_cleanup();
 }
