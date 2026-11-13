@@ -3,20 +3,20 @@
 Маленький сервис погоды на Си. Получает название города, спрашивает погоду
 у бесплатного сайта [Open-Meteo](https://open-meteo.com) (ключ не нужен)
 и отвечает температурой и ветром. Всё, что происходит, пишет в журнал:
-на экран, в файл `service.log` и в базу SQLite `service.db`.
+на экран, в файл `service.log` и, если задана база, в PostgreSQL.
 
 ## Библиотеки (поставить один раз)
 
 Fedora:
 
 ```sh
-sudo dnf install gcc cmake pkgconf-pkg-config libmicrohttpd-devel libcurl-devel sqlite-devel cjson-devel
+sudo dnf install gcc cmake pkgconf-pkg-config libmicrohttpd-devel libcurl-devel libpq-devel cjson-devel
 ```
 
 Ubuntu / Debian:
 
 ```sh
-sudo apt install build-essential cmake pkgconf libmicrohttpd-dev libcurl4-openssl-dev libsqlite3-dev libcjson-dev sqlite3
+sudo apt install build-essential cmake pkgconf libmicrohttpd-dev libcurl4-openssl-dev libpq-dev libcjson-dev
 ```
 
 ## Сборка и тесты
@@ -34,6 +34,10 @@ ctest --test-dir build --output-on-failure
 | `config` — `tests/test_config.c` | настройки: значения по умолчанию, файл, переменные окружения, опечатки |
 | `service` — `tests/test_service.c` | ответы сервера на настоящие запросы, журнал в файле и в базе, параллельную работу, быструю остановку |
 | `main` — `tests/test_main.c` | программу целиком: запуск, остановку сигналом, ошибки при старте |
+| `db` — `tests/test_db.c` | журнал в PostgreSQL: строки доходят до базы как есть, журнал переживает перезапуск базы |
+
+Тесту `db` нужна настоящая база (см. «База для журнала»). Без неё ctest
+пропускает его и пишет `Skipped`.
 
 ## Запуск
 
@@ -74,8 +78,8 @@ curl -d '{"city":"Київ"}' http://localhost:8080/weather
 | Настройка | По умолчанию | Что это |
 |---|---|---|
 | `PORT` | `8080` | порт, на котором сервис принимает запросы (1–65535) |
-| `DB_PATH` | `service.db` | база SQLite с журналом (таблица `logs`) |
-| `LOG_PATH` | `service.log` | файл журнала |
+| `LOG_PATH` | `service.log` | файл журнала; пусто — без файла |
+| `DB_URL` | пусто | адрес базы PostgreSQL для журнала (таблица `logs`); пусто — без базы. Пароль — в переменной `PGPASSWORD`, не в адресе |
 | `WEATHER_URL` | `https://api.open-meteo.com/v1/forecast` | адрес прогноза |
 | `GEO_URL` | `https://geocoding-api.open-meteo.com/v1/search` | адрес поиска города |
 | `GEO_LANGUAGE` | `uk` | язык поиска и названий в ответе: `uk`, `ru`, `en`… Кириллицу сайт находит только на её языке: «Київ» — с `uk`, «Киев» — с `ru` |
@@ -85,11 +89,37 @@ curl -d '{"city":"Київ"}' http://localhost:8080/weather
 существовать. Без аргумента и без `config.env` сервис работает на значениях
 по умолчанию и говорит об этом.
 
+## База для журнала (PostgreSQL)
+
+Без базы сервис тоже работает: журнал идёт на экран и в файл. Базу проще всего
+поднять в Docker — файл `compose.yaml` уже готов:
+
+```sh
+echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env   # один раз: пароль базы
+docker compose up -d
+```
+
+Пароль лежит в файле `.env`, в git он не попадает. Запуск сервиса с журналом в базе:
+
+```sh
+export PGPASSWORD=$(sed -n 's/^POSTGRES_PASSWORD=//p' .env)
+DB_URL=postgresql://weather@127.0.0.1:5432/weather ./build/weather_service
+```
+
+Тест базы — с той же базой (он заводит себе отдельную базу и потом удаляет её):
+
+```sh
+TEST_DB_URL=postgresql://weather@127.0.0.1:5432/weather ctest --test-dir build --output-on-failure
+```
+
+Если связь с базой оборвалась, журнал переподключается сам. Пока базы нет,
+строки идут только на экран и в файл.
+
 ## Журнал
 
 ```sh
 cat service.log
-sqlite3 service.db "SELECT * FROM logs;"
+docker compose exec db psql -U weather -d weather -c "SELECT ts, level, message FROM logs ORDER BY id"
 ```
 
 ## Проверка памяти
@@ -110,3 +140,4 @@ ctest --test-dir build-check --output-on-failure
 Сервис принимает запросы со всех сетевых адресов компьютера, пароля нет.
 Брандмауэр Fedora Workstation по умолчанию пропускает порты выше 1024, поэтому
 запущенный сервис видят другие устройства в той же сети.
+База из `compose.yaml` видна только с этого компьютера (адрес 127.0.0.1).

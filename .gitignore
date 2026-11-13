@@ -1,14 +1,13 @@
 # Папки сборки: cmake -B build, cmake -B build-check
 build*/
 
-# Что создаёт запущенный сервис (DB_PATH и LOG_PATH из config.env)
-service.db
-service.db-journal
+# Что создаёт запущенный сервис (LOG_PATH из config.env)
 service.log
+
+# Пароль базы для compose.yaml: пароли в git не храним
+.env
 
 # Что оставляют тесты, если запускать их не из папки сборки
 test.env
 test_*.log
-test_*.db
-test_*.db-journal
 test_*.out

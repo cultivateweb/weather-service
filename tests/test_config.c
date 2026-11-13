@@ -25,7 +25,7 @@ int main(void)
 
     /* Тест не должен зависеть от переменных окружения машины. */
     unsetenv("PORT");
-    unsetenv("DB_PATH");
+    unsetenv("DB_URL");
     unsetenv("LOG_PATH");
     unsetenv("WEATHER_URL");
     unsetenv("GEO_URL");
@@ -35,15 +35,17 @@ int main(void)
     CHECK(config_load(&c, "no-such-file.env", 0) == 0);
     CHECK(c.port == 8080);
     CHECK(strcmp(c.geo_language, "uk") == 0);
+    CHECK(c.db_url[0] == '\0');                                    /* без базы */
+    CHECK(strcmp(c.log_path, "service.log") == 0);
 
     /* Файла нет, а его указали явно (опечатка в имени): ошибка. */
     CHECK(config_load(&c, "no-such-file.env", 1) != 0);
 
     /* Файл: комментарии пропускаются, пробелы вокруг убираются. */
-    CHECK(write_file("test.env", "# comment\n  PORT = 9090 \nDB_PATH=x.db\n") == 0);
+    CHECK(write_file("test.env", "# comment\n  PORT = 9090 \nDB_URL=postgresql://w@db/w\n") == 0);
     CHECK(config_load(&c, "test.env", 1) == 0);
     CHECK(c.port == 9090);
-    CHECK(strcmp(c.db_path, "x.db") == 0);
+    CHECK(strcmp(c.db_url, "postgresql://w@db/w") == 0);
 
     /* Переменная окружения важнее файла. */
     setenv("PORT", "7000", 1);
@@ -100,6 +102,16 @@ int main(void)
     CHECK(config_load(&c, "test.env", 1) != 0);
     CHECK(write_file("test.env", "GEO_LANGUAGE=u&\n") == 0);
     CHECK(config_load(&c, "test.env", 1) != 0);
+
+    /* Старая настройка базы SQLite больше не существует: её не пропускаем молча. */
+    CHECK(write_file("test.env", "DB_PATH=service.db\n") == 0);
+    CHECK(config_load(&c, "test.env", 1) != 0);
+
+    /* Пустое значение выключает файл журнала (так делают в Docker). */
+    setenv("LOG_PATH", "", 1);
+    CHECK(config_load(&c, "no-such-file.env", 0) == 0);
+    CHECK(c.log_path[0] == '\0');
+    unsetenv("LOG_PATH");
 
     remove("test.env");
     puts("config: ok");

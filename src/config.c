@@ -7,7 +7,7 @@
 #include <string.h>
 
 static const char *const CONFIG_KEYS[] = {
-    "PORT", "DB_PATH", "LOG_PATH", "WEATHER_URL", "GEO_URL", "GEO_LANGUAGE"
+    "PORT", "DB_URL", "LOG_PATH", "WEATHER_URL", "GEO_URL", "GEO_LANGUAGE"
 };
 
 /* Убирает пробелы по краям строки (меняет строку на месте). */
@@ -48,7 +48,7 @@ static int config_set(Config *c, const char *key, const char *val)
         memcpy(c->geo_language, val, 3);
         return 0;
     }
-    if      (strcmp(key, "DB_PATH") == 0)     dst = c->db_path;
+    if      (strcmp(key, "DB_URL") == 0)      dst = c->db_url;
     else if (strcmp(key, "LOG_PATH") == 0)    dst = c->log_path;
     else if (strcmp(key, "WEATHER_URL") == 0) dst = c->weather_url;
     else if (strcmp(key, "GEO_URL") == 0)     dst = c->geo_url;
@@ -111,7 +111,7 @@ int config_load(Config *c, const char *path, int required)
 
     /* Значения по умолчанию. */
     c->port = 8080;
-    snprintf(c->db_path, CONFIG_STR_MAX, "service.db");
+    c->db_url[0] = '\0';                      /* без базы: журнал на экран и в файл */
     snprintf(c->log_path, CONFIG_STR_MAX, "service.log");
     snprintf(c->weather_url, CONFIG_STR_MAX, "https://api.open-meteo.com/v1/forecast");
     snprintf(c->geo_url, CONFIG_STR_MAX, "https://geocoding-api.open-meteo.com/v1/search");

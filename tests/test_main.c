@@ -20,6 +20,7 @@
 
 static int         failures;
 static const char *g_bin;           /* путь к weather_service */
+static const char *g_db_url = "";  /* DB_URL для запуска; пусто — без базы */
 
 #define CHECK(cond) do { if (!(cond)) { \
     fprintf(stderr, "%s:%d: failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
@@ -71,7 +72,7 @@ static pid_t start(const char *cfg, int port)
         snprintf(p, sizeof p, "%d", port);
         setenv("PORT", p, 1);
         setenv("LOG_PATH", "test_main.log", 1);
-        setenv("DB_PATH", "test_main.db", 1);
+        setenv("DB_URL", g_db_url, 1);
         execl(g_bin, g_bin, cfg, (char *)NULL);
         _exit(127);                                   /* сюда попадаем, только если запуск не удался */
     }
@@ -211,6 +212,15 @@ int main(int argc, char **argv)
     CHECK(exit_code(pid) == 1);
     CHECK(out_has("no-such-config.env"));
 
+    /* 4) База указана, но недоступна (на порту 1 её нет): программа
+          не запускается и говорит почему. */
+    g_db_url = "postgresql://127.0.0.1:1/weather";
+    pid = start(cfg, port);
+    CHECK(exit_code(pid) == 1);
+    CHECK(out_has("database: cannot connect"));
+    CHECK(!out_has("stopped"));
+    g_db_url = "";
+
     curl_global_cleanup();
     if (failures) {
         char *text = read_out();
@@ -221,7 +231,6 @@ int main(int argc, char **argv)
     }
     remove(OUT_FILE);
     remove("test_main.log");
-    remove("test_main.db");
     puts("main: ok");
     return 0;
 }

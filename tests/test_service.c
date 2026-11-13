@@ -14,14 +14,12 @@
 #include <cjson/cJSON.h>
 #include <curl/curl.h>
 #include <microhttpd.h>
-#include <sqlite3.h>
 
 #include "logger.h"
 #include "server.h"
 #include "weather.h"
 
 #define LOG_FILE     "test_service.log"
-#define DB_FILE      "test_service.db"
 #define SLOW_SECONDS 3      /* столько «думает» подставной сайт над городом Slow */
 
 static int failures;
@@ -274,22 +272,6 @@ static int file_has_line_starting(const char *path, const char *prefix)
     return found;
 }
 
-/* Одно число из базы журнала; -1, если запрос не удался (например, нет таблицы). */
-static int db_count(const char *sql)
-{
-    sqlite3      *db = NULL;
-    sqlite3_stmt *st = NULL;
-    int           n  = -1;
-
-    if (sqlite3_open(DB_FILE, &db) == SQLITE_OK
-        && sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK
-        && sqlite3_step(st) == SQLITE_ROW)
-        n = sqlite3_column_int(st, 0);
-    sqlite3_finalize(st);
-    sqlite3_close(db);
-    return n;
-}
-
 /* ---------- Сам тест ---------- */
 
 int main(void)
@@ -302,8 +284,7 @@ int main(void)
     Reply              r;
 
     remove(LOG_FILE);
-    remove(DB_FILE);
-    if (log_open(LOG_FILE, DB_FILE) != 0) return 1;
+    if (log_open(LOG_FILE, "") != 0) return 1;      /* база не нужна: её проверяет test_db.c */
 
     fake = fake_start(&fake_port);
     if (!fake) { fprintf(stderr, "fake weather API did not start\n"); return 1; }
@@ -408,15 +389,13 @@ int main(void)
     MHD_stop_daemon(fake);
     log_close();
 
-    /* Журнал: файл и база */
+    /* Журнал в файле */
     CHECK(file_has(LOG_FILE, "request: city=Kyiv"));
     CHECK(file_has(LOG_FILE, "answer: Kyiv"));
     CHECK(!file_has_line_starting(LOG_FILE, "INJECTED"));          /* запись не подделали */
-    CHECK(db_count("SELECT count(*) FROM logs WHERE message LIKE '%DROP TABLE%'") == 2);
 
     if (failures) return 1;
     remove(LOG_FILE);
-    remove(DB_FILE);
     puts("service: ok");
     return 0;
 }

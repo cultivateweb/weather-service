@@ -1,0 +1,29 @@
+# База PostgreSQL для журнала сервиса.
+#
+#   1. Один раз — пароль базы в файл .env (он не попадает в git):
+#        echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env
+#   2. Запуск:     docker compose up -d
+#      Остановка:  docker compose down      (записи журнала сохраняются)
+#
+# База видна только с этого компьютера: 127.0.0.1:5432.
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: weather
+      POSTGRES_DB: weather
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?нет пароля базы - создай файл .env, как написано в начале compose.yaml}
+    volumes:
+      - db-data:/var/lib/postgresql        # данные базы живут в томе Docker и переживают перезапуск
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:                           # «база готова принимать подключения?»
+      test: ["CMD", "pg_isready", "-U", "weather", "-d", "weather"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  db-data:

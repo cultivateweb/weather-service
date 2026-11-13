@@ -7,8 +7,8 @@
    поэтому структура открытая: любой модуль может читать поля. */
 typedef struct {
     int  port;
-    char db_path[CONFIG_STR_MAX];
-    char log_path[CONFIG_STR_MAX];
+    char db_url[CONFIG_STR_MAX];    /* адрес базы PostgreSQL для журнала; пусто — в базу не писать */
+    char log_path[CONFIG_STR_MAX];  /* файл журнала; пусто — в файл не писать */
     char weather_url[CONFIG_STR_MAX];
     char geo_url[CONFIG_STR_MAX];
     char geo_language[3];           /* язык поиска города: две буквы, например uk */

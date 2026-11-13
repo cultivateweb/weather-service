@@ -16,7 +16,7 @@ endif()
 
 # Внешние библиотеки. Как поставить их на Fedora и на Ubuntu/Debian — в README.md.
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET libmicrohttpd libcurl sqlite3 libcjson)
+pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET libmicrohttpd libcurl libpq libcjson)
 find_package(Threads REQUIRED)    # потоки: сервер обслуживает запросы параллельно
 
 # Все модули собираются в одну библиотеку core.
@@ -50,3 +50,10 @@ target_link_libraries(test_main PRIVATE PkgConfig::DEPS)
 add_test(NAME main COMMAND test_main $<TARGET_FILE:weather_service>
                                      ${CMAKE_CURRENT_SOURCE_DIR}/config.env)
 set_tests_properties(main PROPERTIES TIMEOUT 60)
+
+# Журнал в PostgreSQL. Нужна настоящая база: TEST_DB_URL=postgresql://... ctest
+# Без TEST_DB_URL тест возвращает 77, и ctest показывает его как Skipped.
+add_executable(test_db tests/test_db.c)
+target_link_libraries(test_db PRIVATE core)
+add_test(NAME db COMMAND test_db)
+set_tests_properties(db PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)

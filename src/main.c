@@ -32,7 +32,7 @@ int main(int argc, char **argv)
 
     /* Путь указали явно — файл обязан быть: опечатка в имени не пройдёт молча. */
     if (config_load(&cfg, cfg_path, argc > 1) != 0) return 1;
-    if (log_open(cfg.log_path, cfg.db_path) != 0) return 1;
+    if (log_open(cfg.log_path, cfg.db_url) != 0) return 1;
 
     if (weather_init(cfg.geo_url, cfg.weather_url, cfg.geo_language) != 0) goto done;
     server = server_start(cfg.port);
