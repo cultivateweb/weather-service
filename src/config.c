@@ -1,6 +1,7 @@
 #include "config.h"          /* свой заголовок подключаем первым: так видно, что он самодостаточен */
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,8 +28,15 @@ static int config_set(Config *c, const char *key, const char *val)
     char *dst;
 
     if (strcmp(key, "PORT") == 0) {
-        long port = strtol(val, NULL, 10);
-        if (port < 1 || port > 65535) return -1;
+        char *end;
+        long  port;
+
+        errno = 0;
+        port  = strtol(val, &end, 10);
+        /* end показывает, где число кончилось: после него ничего быть не должно,
+           иначе «8080abc» молча превратилось бы в 8080. */
+        if (end == val || *end != '\0' || errno == ERANGE || port < 1 || port > 65535)
+            return -1;
         c->port = (int)port;
         return 0;
     }

@@ -52,6 +52,21 @@ int main(void)
     CHECK(write_file("test.env", "PORT=abc\n") == 0);
     CHECK(config_load(&c, "test.env") != 0);
 
+    /* Порт: всё значение целиком — число от 1 до 65535. */
+    CHECK(write_file("test.env", "PORT=8080abc\n") == 0);
+    CHECK(config_load(&c, "test.env") != 0);
+    CHECK(write_file("test.env", "PORT=80.5\n") == 0);
+    CHECK(config_load(&c, "test.env") != 0);
+    CHECK(write_file("test.env", "PORT=0\n") == 0);
+    CHECK(config_load(&c, "test.env") != 0);
+    CHECK(write_file("test.env", "PORT=65536\n") == 0);
+    CHECK(config_load(&c, "test.env") != 0);
+    CHECK(write_file("test.env", "PORT=99999999999999999999\n") == 0);
+    CHECK(config_load(&c, "test.env") != 0);
+    CHECK(write_file("test.env", "PORT=65535\n") == 0);
+    CHECK(config_load(&c, "test.env") == 0);
+    CHECK(c.port == 65535);
+
     /* Язык поиска: только две строчные латинские буквы. */
     CHECK(write_file("test.env", "GEO_LANGUAGE=ru\n") == 0);
     CHECK(config_load(&c, "test.env") == 0);
