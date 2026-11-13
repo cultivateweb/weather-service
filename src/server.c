@@ -11,7 +11,8 @@
 #include "logger.h"
 #include "weather.h"
 
-#define MAX_BODY 2048          /* макс. размер входящего JSON, байт */
+#define MAX_BODY        2048   /* макс. размер входящего JSON, байт */
+#define MAX_CONNECTIONS 64u    /* больше одновременных подключений не принимаем */
 
 /* Здесь живёт всё, что связано с microhttpd. Снаружи этого не видно. */
 struct Server {
@@ -158,10 +159,14 @@ Server *server_start(int port)
     Server *s = calloc(1, sizeof *s);
 
     if (!s) return NULL;
-    s->daemon = MHD_start_daemon(MHD_USE_INTERNAL_POLLING_THREAD, (uint16_t)port,
+    /* Каждое подключение обслуживается в своём потоке: пока один запрос ждёт
+       погодный сайт (до 20 секунд), остальные получают ответ сразу. */
+    s->daemon = MHD_start_daemon(MHD_USE_THREAD_PER_CONNECTION | MHD_USE_AUTO_INTERNAL_THREAD,
+                                 (uint16_t)port,
                                  NULL, NULL, &handle, NULL,
                                  MHD_OPTION_NOTIFY_COMPLETED, &request_done, NULL,
                                  MHD_OPTION_CONNECTION_TIMEOUT, 30u,
+                                 MHD_OPTION_CONNECTION_LIMIT, MAX_CONNECTIONS,
                                  MHD_OPTION_END);
     if (!s->daemon) {
         log_msg("ERROR", "cannot start server on port %d", port);

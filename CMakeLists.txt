@@ -16,6 +16,7 @@ endif()
 # Внешние библиотеки (на Ubuntu/Debian ставятся через apt).
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET libmicrohttpd libcurl sqlite3 libcjson)
+find_package(Threads REQUIRED)    # потоки: сервер обслуживает запросы параллельно
 
 # Все модули собираются в одну библиотеку core.
 add_library(core
@@ -24,7 +25,7 @@ add_library(core
   src/server.c
   src/weather.c)
 target_include_directories(core PUBLIC src)
-target_link_libraries(core PUBLIC PkgConfig::DEPS)
+target_link_libraries(core PUBLIC PkgConfig::DEPS Threads::Threads)
 
 # Программа: только main.c плюс библиотека.
 add_executable(weather_service src/main.c)

@@ -3,10 +3,12 @@
  * Интернет не нужен: вместо Open-Meteo отвечает подставной сайт,
  * который тест поднимает у себя же (на той же библиотеке microhttpd).
  */
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cjson/cJSON.h>
@@ -195,6 +197,28 @@ static int json_num_is(const char *json, const char *key, double want)
     return ok;
 }
 
+/* Запрос медленного города в отдельном потоке: пока он ждёт, тест шлёт другие. */
+static void *slow_request(void *arg)
+{
+    *(Reply *)arg = http("POST", "/weather", "{\"city\":\"Slow\"}");
+    return NULL;
+}
+
+static double now(void)
+{
+    struct timespec t;
+
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
+}
+
+static void pause_ms(long ms)
+{
+    struct timespec t = { ms / 1000, (ms % 1000) * 1000000L };
+
+    nanosleep(&t, NULL);
+}
+
 /* Строка body вида {"city":"aaa...a"}: название из n букв a. */
 static char *city_body(size_t n)
 {
@@ -332,6 +356,26 @@ int main(void)
     /* Опасные названия: перевод строки и команда для базы */
     CHECK(http("POST", "/weather", "{\"city\":\"Evil\\nINJECTED [ERROR] fake\"}").status == 200);
     CHECK(http("POST", "/weather", "{\"city\":\"x'); DROP TABLE logs;--\"}").status == 200);
+
+    /* Пока один запрос ждёт медленный погодный сайт, остальные обслуживаются сразу. */
+    {
+        pthread_t t;
+        Reply     slow;
+        double    t0;
+        int       started = pthread_create(&t, NULL, slow_request, &slow) == 0;
+
+        CHECK(started);
+        if (started) {
+            pause_ms(300);                              /* медленный запрос уже ждёт */
+            t0 = now();
+            CHECK(http("GET", "/health", NULL).status == 200);
+            CHECK(now() - t0 < 1.0);
+            CHECK(http("POST", "/weather", "{\"city\":\"Kyiv\"}").status == 200);
+            CHECK(now() - t0 < 1.0);
+            pthread_join(t, NULL);
+            CHECK(slow.status == 200);
+        }
+    }
 
     server_stop(srv);
     weather_cleanup();

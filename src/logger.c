@@ -1,5 +1,6 @@
 #include "logger.h"
 
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
@@ -9,6 +10,11 @@
 /* static: эти переменные видны только в этом файле. */
 static FILE    *g_file;
 static sqlite3 *g_db;
+
+/* Запросы обслуживаются в нескольких потоках, и писать в журнал они могут
+   одновременно. Замок пускает к записи по одному: строки не перемешаются,
+   а порядок записей в файле и в базе совпадёт. */
+static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int log_open(const char *file_path, const char *db_path)
 {
@@ -57,6 +63,8 @@ void log_msg(const char *level, const char *fmt, ...)
     gmtime_r(&now, &tm);
     strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", &tm);
 
+    pthread_mutex_lock(&g_lock);
+
     fprintf(stderr, "%s [%s] %s\n", ts, level, msg);            /* на экран */
 
     if (g_file) {                                               /* в файл */
@@ -79,10 +87,14 @@ void log_msg(const char *level, const char *fmt, ...)
         }
         sqlite3_finalize(st);
     }
+
+    pthread_mutex_unlock(&g_lock);
 }
 
 void log_close(void)
 {
+    pthread_mutex_lock(&g_lock);
     if (g_db)   { sqlite3_close(g_db); g_db = NULL; }
     if (g_file) { fclose(g_file);      g_file = NULL; }
+    pthread_mutex_unlock(&g_lock);
 }
