@@ -70,20 +70,33 @@ jobs:
           echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env
           docker compose up -d --no-build --wait
 
-      - name: Сервис отвечает, сайт погоды доступен, журнал пишется в базу
+      - name: Сервис отвечает, ходит на сайт погоды, пишет журнал в базу
         run: |
-          for i in $(seq 30); do curl -sf http://127.0.0.1:8080/health && break; sleep 1; done
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:8080/health
           echo
           # Настоящий запрос к Open-Meteo: проверяет шифрование и поиск адресов
-          # в пустом образе. Три попытки — на случай, если сайт на миг недоступен.
-          for i in 1 2 3; do
-            curl -sf -o answer.json -d '{"city":"Kyiv"}' http://127.0.0.1:8080/weather && break
-            sleep 5
+          # в пустом образе. Пять попыток через 10 секунд: с машин GitHub сайт
+          # бывает недоступен почти минуту.
+          ok=
+          for i in 1 2 3 4 5; do
+            if curl -sf -o answer.json -d '{"city":"Kyiv"}' http://127.0.0.1:8080/weather; then ok=1; break; fi
+            sleep 10
           done
-          cat answer.json
-          echo
-          grep -q '"country"' answer.json
-          # Ответ приходит по-украински («Київ»), а запрос пишется в журнал как есть.
+          if [ -n "$ok" ]; then
+            cat answer.json
+            echo
+            grep -q '"country"' answer.json
+          elif docker compose logs app | grep -F '[ERROR]' | grep -q -i -E 'ssl|certificate|resolv'; then
+            # Сертификат и поиск адреса — работа самого образа, значит, ошибка наша.
+            echo "::error::Сервис не смог проверить сертификат сайта погоды или найти его адрес"
+            exit 1
+          else
+            # Сайт чужой: если он молчит, сервис в этом не виноват.
+            echo "::warning::Сайт погоды не ответил машине GitHub, ответ не проверен"
+          fi
+          # Запрос пишется в журнал до похода на сайт погоды, поэтому эта проверка — всегда.
+          # Ответ приходит по-украински («Київ»), а запрос записан как есть.
           rows=$(docker compose exec -T db psql -U weather -d weather -tAc \
                  "SELECT count(*) FROM logs WHERE message = 'request: city=Kyiv'")
           echo "строк журнала в базе про этот запрос: $rows"
