@@ -1,5 +1,7 @@
 #include "server.h"
 
+#include <stdarg.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +19,7 @@
 /* Здесь живёт всё, что связано с microhttpd. Снаружи этого не видно. */
 struct Server {
     struct MHD_Daemon *daemon;
+    atomic_int         stopping;   /* 1 = идёт остановка (флаг читают другие потоки) */
 };
 
 /* ---------- Ответы ---------- */
@@ -154,6 +157,23 @@ static void request_done(void *cls, struct MHD_Connection *conn, void **req,
     *req = NULL;
 }
 
+/* Свои сообщения об ошибках (например, «порт занят») microhttpd передаёт сюда,
+   а мы кладём их в общий журнал. Без этого причина ошибки терялась. */
+static void on_mhd_log(void *cls, const char *fmt, va_list ap)
+{
+    Server *s = cls;
+    char    msg[256];
+    size_t  n;
+
+    /* При остановке библиотека сообщает об оборванных подключениях:
+       это ожидаемо, журнал этим не засоряем. */
+    if (atomic_load(&s->stopping)) return;
+    vsnprintf(msg, sizeof msg, fmt, ap);
+    n = strlen(msg);
+    while (n > 0 && (msg[n - 1] == '\n' || msg[n - 1] == ' ')) msg[--n] = '\0';
+    log_msg("WARN", "http: %s", msg);
+}
+
 /* ---------- Открытый интерфейс (то, что объявлено в server.h) ---------- */
 
 Server *server_start(int port)
@@ -161,11 +181,14 @@ Server *server_start(int port)
     Server *s = calloc(1, sizeof *s);
 
     if (!s) return NULL;
+    atomic_init(&s->stopping, 0);
     /* Каждое подключение обслуживается в своём потоке: пока один запрос ждёт
        погодный сайт (до 20 секунд), остальные получают ответ сразу. */
-    s->daemon = MHD_start_daemon(MHD_USE_THREAD_PER_CONNECTION | MHD_USE_AUTO_INTERNAL_THREAD,
+    s->daemon = MHD_start_daemon(MHD_USE_THREAD_PER_CONNECTION | MHD_USE_AUTO_INTERNAL_THREAD
+                                 | MHD_USE_ERROR_LOG,
                                  (uint16_t)port,
                                  NULL, NULL, &handle, NULL,
+                                 MHD_OPTION_EXTERNAL_LOGGER, &on_mhd_log, s,      /* первым, по правилам */
                                  MHD_OPTION_NOTIFY_COMPLETED, &request_done, NULL,
                                  MHD_OPTION_CONNECTION_TIMEOUT, 30u,
                                  MHD_OPTION_CONNECTION_LIMIT, MAX_CONNECTIONS,
@@ -190,6 +213,7 @@ int server_port(const Server *s)
 void server_stop(Server *s)
 {
     if (!s) return;
+    atomic_store(&s->stopping, 1);
     MHD_stop_daemon(s->daemon);
     free(s);
 }

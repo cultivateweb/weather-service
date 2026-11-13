@@ -187,6 +187,7 @@ int main(int argc, char **argv)
     pid = start(cfg, port);
     CHECK(exit_code(pid) == 1);
     CHECK(out_has("cannot start server"));
+    CHECK(out_has("Address already in use"));        /* сказано, почему не запустился */
     if (fd >= 0) close(fd);
 
     /* 3) Файл настроек указан явно, но его нет (опечатка в имени): ошибка. */
