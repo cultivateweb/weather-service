@@ -85,10 +85,12 @@ static enum MHD_Result handle_weather(struct MHD_Connection *conn, const char *b
         return reply_error(conn, 502, "weather service is unavailable");
     }
 
-    log_msg("INFO", "answer: %s, %.1f C, wind %.1f km/h", w.place, w.temperature_c, w.wind_kmh);
+    log_msg("INFO", "answer: %s (%s), %.1f C, wind %.1f km/h",
+            w.place, w.country, w.temperature_c, w.wind_kmh);
 
     out = cJSON_CreateObject();
     cJSON_AddStringToObject(out, "city", w.place);
+    cJSON_AddStringToObject(out, "country", w.country);
     cJSON_AddNumberToObject(out, "temperature_c", w.temperature_c);
     cJSON_AddNumberToObject(out, "wind_kmh", w.wind_kmh);
     return reply(conn, 200, out);

@@ -3,6 +3,7 @@
 
 typedef struct {
     char   place[128];      /* название города, как его вернул геокодер */
+    char   country[64];     /* страна: по ней видно, тот ли город нашёлся */
     double temperature_c;
     double wind_kmh;
 } WeatherResult;

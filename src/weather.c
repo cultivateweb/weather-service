@@ -103,14 +103,14 @@ static cJSON *get_json(CURL *curl, const char *url)
 
 /* ---------- Средний уровень: два запроса к Open-Meteo ---------- */
 
-/* Название города -> координаты. */
-static WeatherStatus geocode(CURL *curl, const char *city, char *name, size_t cap,
+/* Название города -> координаты, название и страна (в out). */
+static WeatherStatus geocode(CURL *curl, const char *city, WeatherResult *out,
                              double *lat, double *lon)
 {
     char          url[1024];
     char         *escaped = curl_easy_escape(curl, city, 0);     /* "Київ" -> "%D0%9A..." */
     cJSON        *json;
-    const cJSON  *first, *la, *lo, *nm;
+    const cJSON  *first, *la, *lo, *nm, *co;
     WeatherStatus rc = WEATHER_NOT_FOUND;
 
     if (!escaped) return WEATHER_ERROR;
@@ -125,10 +125,14 @@ static WeatherStatus geocode(CURL *curl, const char *city, char *name, size_t ca
     la = cJSON_GetObjectItemCaseSensitive(first, "latitude");
     lo = cJSON_GetObjectItemCaseSensitive(first, "longitude");
     nm = cJSON_GetObjectItemCaseSensitive(first, "name");
+    co = cJSON_GetObjectItemCaseSensitive(first, "country");
     if (cJSON_IsNumber(la) && cJSON_IsNumber(lo) && cJSON_IsString(nm)) {
         *lat = la->valuedouble;
         *lon = lo->valuedouble;
-        snprintf(name, cap, "%s", nm->valuestring);
+        snprintf(out->place, sizeof out->place, "%s", nm->valuestring);
+        /* Страны может и не быть (например, у места в открытом море). */
+        snprintf(out->country, sizeof out->country, "%s",
+                 cJSON_IsString(co) ? co->valuestring : "");
         rc = WEATHER_OK;
     }
     cJSON_Delete(json);
@@ -200,7 +204,7 @@ WeatherStatus weather_lookup(const char *city, WeatherResult *out)
         log_msg("ERROR", "weather: cannot create a libcurl handle");
         return WEATHER_ERROR;
     }
-    st = geocode(curl, city, out->place, sizeof out->place, &lat, &lon);
+    st = geocode(curl, city, out, &lat, &lon);
     if (st == WEATHER_OK)
         st = fetch_current(curl, lat, lon, &out->temperature_c, &out->wind_kmh);
     curl_easy_cleanup(curl);

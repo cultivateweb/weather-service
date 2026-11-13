@@ -335,6 +335,7 @@ int main(void)
     r = http("POST", "/weather", "{\"city\":\"Kyiv\"}");
     CHECK(r.status == 200);
     CHECK(json_str_is(r.body, "city", "Kyiv"));
+    CHECK(json_str_is(r.body, "country", "Україна"));     /* видно, какой именно Киев нашёлся */
     CHECK(json_num_is(r.body, "temperature_c", 3.4));
     CHECK(json_num_is(r.body, "wind_kmh", 12.3));
 
