@@ -1,0 +1,14 @@
+# Папки сборки: cmake -B build, cmake -B build-check
+build*/
+
+# Что создаёт запущенный сервис (DB_PATH и LOG_PATH из config.env)
+service.db
+service.db-journal
+service.log
+
+# Что оставляют тесты, если запускать их не из папки сборки
+test.env
+test_*.log
+test_*.db
+test_*.db-journal
+test_*.out
