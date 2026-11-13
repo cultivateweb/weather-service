@@ -377,7 +377,21 @@ int main(void)
         }
     }
 
-    server_stop(srv);
+    /* Остановка не ждёт медленный погодный сайт. */
+    {
+        pthread_t t;
+        Reply     slow;
+        double    t0;
+        int       started = pthread_create(&t, NULL, slow_request, &slow) == 0;
+
+        CHECK(started);
+        pause_ms(300);                                  /* медленный запрос уже ждёт */
+        t0 = now();
+        weather_cancel_all();                           /* так делает main.c при остановке */
+        server_stop(srv);
+        CHECK(now() - t0 < 2.0);
+        if (started) pthread_join(t, NULL);
+    }
     weather_cleanup();
     MHD_stop_daemon(fake);
     log_close();

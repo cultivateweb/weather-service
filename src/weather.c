@@ -1,5 +1,6 @@
 #include "weather.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,10 @@
 static int  g_ready;                   /* weather_init() прошёл успешно */
 static char g_geo_url[URL_MAX];
 static char g_weather_url[URL_MAX];
+
+/* 1 = сервис останавливается, идущие запросы надо прервать.
+   atomic: флаг меняет один поток, а читают другие. */
+static atomic_int g_cancel;
 
 /* ---------- Низкий уровень: HTTP ---------- */
 
@@ -43,6 +48,16 @@ static size_t on_data(char *chunk, size_t size, size_t count, void *userp)
     return add;
 }
 
+/* libcurl вызывает её, пока идёт запрос: часто, пока идут данные, и примерно
+   раз в секунду, пока сайт молчит. Не ноль — прервать запрос. Так остановка
+   сервиса не ждёт медленный сайт (иначе ждала бы до 20 секунд). */
+static int on_progress(void *userp, curl_off_t dltotal, curl_off_t dlnow,
+                       curl_off_t ultotal, curl_off_t ulnow)
+{
+    (void)userp; (void)dltotal; (void)dlnow; (void)ultotal; (void)ulnow;
+    return atomic_load(&g_cancel) ? 1 : 0;
+}
+
 /* GET-запрос. Возвращает тело ответа (потом его нужно free) или NULL. */
 static char *http_get(CURL *curl, const char *url)
 {
@@ -56,11 +71,16 @@ static char *http_get(CURL *curl, const char *url)
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &b);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);     /* не ждём дольше 10 секунд */
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);     /* запросы идут из нескольких потоков */
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, on_progress);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);   /* без этого on_progress не вызывается */
 
     rc = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     if (rc != CURLE_OK || status != 200 || !b.data) {
-        log_msg("ERROR", "weather API failed: %s (HTTP %ld)", curl_easy_strerror(rc), status);
+        if (rc == CURLE_ABORTED_BY_CALLBACK)
+            log_msg("INFO", "weather request cancelled: the service is stopping");
+        else
+            log_msg("ERROR", "weather API failed: %s (HTTP %ld)", curl_easy_strerror(rc), status);
         free(b.data);
         return NULL;
     }
@@ -155,6 +175,7 @@ int weather_init(const char *geo_url, const char *weather_url)
         log_msg("ERROR", "weather: cannot initialise libcurl");
         return -1;
     }
+    atomic_store(&g_cancel, 0);
     g_ready = 1;
     return 0;
 }
@@ -179,6 +200,11 @@ WeatherStatus weather_lookup(const char *city, WeatherResult *out)
         st = fetch_current(curl, lat, lon, &out->temperature_c, &out->wind_kmh);
     curl_easy_cleanup(curl);
     return st;
+}
+
+void weather_cancel_all(void)
+{
+    atomic_store(&g_cancel, 1);
 }
 
 void weather_cleanup(void)

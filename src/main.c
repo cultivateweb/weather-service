@@ -39,6 +39,7 @@ int main(int argc, char **argv)
     rc = 0;
 
 done:                                  /* единое место очистки при любом выходе */
+    weather_cancel_all();              /* иначе остановка ждала бы медленный погодный сайт */
     server_stop(server);
     log_msg("INFO", "stopped");
     weather_cleanup();
