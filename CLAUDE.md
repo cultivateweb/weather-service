@@ -19,6 +19,13 @@ everything in C, tests included). README.md (Russian) is the user guide.
 - CI: `.github/workflows/tests.yml` — Docker build, all tests via compose, smoke test
   with a real Open-Meteo call; system build + ASan with a PostgreSQL service.
 
+## Commits
+
+- Author: `cultivateweb <30661271+cultivateweb@users.noreply.github.com>` — set in this
+  repo's git config; the personal email must never get into a commit (the repo is public).
+- No `Co-Authored-By` trailer: the owner asked to keep commit messages without it.
+- One commit per change, conventional subject in lowercase English.
+
 ## Traps
 
 - The language setting is `GEO_LANGUAGE`, not `LANGUAGE`: every setting can come from
