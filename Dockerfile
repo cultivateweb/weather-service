@@ -8,6 +8,7 @@
 #
 # На компьютере нужен только Docker:
 #   docker compose up -d --build                   сервис вместе с базой (compose.yaml)
+#   docker compose run --rm --build test           все тесты, вместе с тестом базы
 #   docker build --target file --output out .      только файл программы — в папку out
 
 FROM alpine:3.24 AS build
@@ -18,7 +19,9 @@ WORKDIR /src
 # Сначала только скрипт: пока он не менялся, Docker берёт собранные библиотеки
 # из своего запаса (кэша) и не собирает их заново.
 COPY scripts/build-static.sh scripts/
-RUN scripts/build-static.sh deps
+# Исходники и архивы после сборки библиотек не нужны: без них стадия сборки
+# (в ней же идут тесты, см. сервис test в compose.yaml) вдвое легче.
+RUN scripts/build-static.sh deps && rm -rf build-static/src build-static/downloads
 COPY . .
 RUN scripts/build-static.sh app
 

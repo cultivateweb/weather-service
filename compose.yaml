@@ -4,6 +4,7 @@
 #        echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env
 #   2. Запуск всего:     docker compose up -d --build
 #      Только база:      docker compose up -d db     (если сервис запускаешь сам)
+#      Все тесты:        docker compose run --rm --build test
 #      Остановка:        docker compose down         (записи журнала сохраняются)
 #
 # Сервис и база видны только с этого компьютера: 127.0.0.1:8080 и 127.0.0.1:5432.
@@ -38,6 +39,22 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
+
+  # Все тесты внутри Docker, вместе с тестом базы (он заводит себе отдельную базу
+  # и потом удаляет её). Обычный «docker compose up» этот сервис не запускает.
+  test:
+    profiles: [test]
+    build:
+      context: .
+      target: build                        # стадия сборки из Dockerfile: в ней лежат тесты
+    image: weather-service:build
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TEST_DB_URL: postgresql://weather@db:5432/weather
+      PGPASSWORD: ${POSTGRES_PASSWORD:?нет пароля базы - создай файл .env, как написано в начале compose.yaml}
+    command: ["ctest", "--test-dir", "build-static/app", "--output-on-failure"]
 
 volumes:
   db-data:

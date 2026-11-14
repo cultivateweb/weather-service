@@ -48,7 +48,7 @@ jobs:
           ctest --test-dir build-check --output-on-failure
 
   docker:
-    name: Docker, один файл из исходников
+    name: Docker (Alpine), один файл из исходников
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -65,10 +65,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Стадия сборки — в ней лежат тесты (берётся из того же кэша)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: build
+          load: true
+          tags: weather-service:build
+          cache-from: type=gha
+
       - name: Сервис и база через compose
         run: |
           echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env
           docker compose up -d --no-build --wait
+
+      - name: Все тесты внутри Docker, вместе с тестом базы
+        run: docker compose run --rm test
 
       - name: Сервис отвечает, ходит на сайт погоды, пишет журнал в базу
         run: |
