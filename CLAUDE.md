@@ -27,6 +27,11 @@ everything in C, tests included). README.md (Russian) is the user guide.
 - The static binary trusts only the embedded CA list (curl is built without CA paths);
   bump `CA_DATE`/`CA_SHA256` in `build-static.sh` now and then.
 - cJSON's CMakeLists needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` with CMake 4.
+- The Docker build stage is Alpine: busybox `sha256sum` has no `--quiet`; bash and
+  linux-headers come from apk. Its gcc already targets musl, so musl skips the musl-gcc
+  wrapper unless `--enable-wrapper=gcc`; it links `-lssp_nonshared` into every program
+  (build-static.sh makes its own) and turns `-static` into static-pie, which crashes
+  with musl-gcc's Scrt1.o — hence `-no-pie` in CMakeLists.txt.
 - postgres:18 images keep data under `/var/lib/postgresql` — mount that, not `.../data`.
 - In shell checks start a service directly (`prog & PID=$!`), not `cd dir && prog &`:
   then `$!` is a subshell, and SIGINT never reaches the service.

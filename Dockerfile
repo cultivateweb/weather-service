@@ -1,22 +1,22 @@
 # Образ сервиса, в котором нет ничего, кроме одного файла программы.
 #
-# Стадия build — Ubuntu с инструментами сборки. Скрипт scripts/build-static.sh
-# скачивает исходники библиотек, собирает их и сервис в один файл и запускает тесты.
-# Итоговый образ собран FROM scratch, то есть из пустоты: в нём нет ни оболочки,
-# ни библиотек. Программе они не нужны — это и есть проверка «пустой ОС».
+# Стадия build — Alpine Linux (маленькая система) с инструментами сборки.
+# Скрипт scripts/build-static.sh скачивает исходники библиотек, собирает их
+# и сервис в один файл и запускает тесты. Итоговый образ собран FROM scratch,
+# то есть из пустоты: в нём нет ни оболочки, ни библиотек — он меньше даже Alpine.
+# Программе они не нужны — это и есть проверка «пустой ОС».
 #
-#   docker compose up --build                          сервис вместе с базой (compose.yaml)
-#   docker build -t weather-service .                  только образ
-#   docker build --target file --output out .          только файл программы — в папку out
+# На компьютере нужен только Docker:
+#   docker compose up -d --build                   сервис вместе с базой (compose.yaml)
+#   docker build --target file --output out .      только файл программы — в папку out
 
-FROM ubuntu:24.04 AS build
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-        gcc libc6-dev make cmake pkgconf curl ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+FROM alpine:3.24 AS build
+# bash — на нём написан скрипт сборки; linux-headers — описание ядра Linux,
+# нужное curl и PostgreSQL; остальное — компилятор и инструменты сборки.
+RUN apk add --no-cache bash gcc make cmake pkgconf curl linux-headers
 WORKDIR /src
 # Сначала только скрипт: пока он не менялся, Docker берёт собранные библиотеки
-# из своего кэша и не собирает их заново.
+# из своего запаса (кэша) и не собирает их заново.
 COPY scripts/build-static.sh scripts/
 RUN scripts/build-static.sh deps
 COPY . .

@@ -8,7 +8,10 @@
 #
 # Ставить библиотеки в систему не нужно: скрипт скачивает их исходники, сверяет
 # контрольные суммы и собирает всё здесь же. Нужны только инструменты:
-# gcc, make, cmake, pkg-config, curl, tar, gzip.
+# bash, gcc, make, cmake, pkg-config, curl, tar, gzip.
+#
+# Проще всего запускать его внутри Docker — тогда на компьютере не нужно ничего,
+# кроме Docker: docker build --target file --output out .   (см. Dockerfile)
 #
 #   scripts/build-static.sh        всё: сначала библиотеки, потом сервис
 #   scripts/build-static.sh deps   только библиотеки (долго, но нужно один раз)
@@ -102,7 +105,8 @@ fetch() {
         curl -fsSL --retry 3 -o "$file.part" "$url"
         mv "$file.part" "$file"
     fi
-    if ! echo "$sum  $file" | sha256sum -c --quiet -; then
+    # Сумму считаем и сравниваем сами: у sha256sum в Alpine нет ключа --quiet.
+    if [ "$(sha256sum "$file" | cut -d' ' -f1)" != "$sum" ]; then
         echo "Контрольная сумма не совпала: $file. Удаляю его." >&2
         rm -f "$file"
         return 1
@@ -137,9 +141,19 @@ build_musl() {
     unpack "musl-$MUSL_VERSION.tar.gz" musl
     cd "$SRC/musl"
     # syslibdir — куда положить загрузчик программ: в нашу папку, а не в /lib.
-    ./configure --prefix="$PREFIX" --syslibdir="$PREFIX/lib"
+    # --enable-wrapper=gcc — собрать обёртку musl-gcc всегда. Сам musl делает её,
+    # только если gcc системы собирает под glibc; в Alpine gcc собирает под musl,
+    # но под свой, а нам нужен этот.
+    ./configure --prefix="$PREFIX" --syslibdir="$PREFIX/lib" --enable-wrapper=gcc
     make -j"$JOBS"
     make install
+    # gcc в Alpine добавляет к каждой программе библиотеку ssp_nonshared — кусочек
+    # защиты стека от взлома. В самом musl её нет: делаем такую же, как Alpine.
+    printf '%s\n' 'void __stack_chk_fail(void);' \
+        '__attribute__((visibility("hidden"))) void __stack_chk_fail_local(void) { __stack_chk_fail(); }' \
+        >ssp_nonshared.c
+    "$MUSL_GCC" -fno-stack-protector -c ssp_nonshared.c -o ssp_nonshared.o
+    ar rcs "$PREFIX/lib/libssp_nonshared.a" ssp_nonshared.o
     link_kernel_headers
 }
 

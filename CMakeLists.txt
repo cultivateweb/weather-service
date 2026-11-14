@@ -33,7 +33,9 @@ if(STATIC)
   target_include_directories(deps INTERFACE ${DEPS_STATIC_INCLUDE_DIRS})
   target_compile_options(deps INTERFACE ${DEPS_STATIC_CFLAGS_OTHER})
   target_link_libraries(deps INTERFACE ${DEPS_STATIC_LDFLAGS})
-  target_link_options(deps INTERFACE -static)
+  # -no-pie: gcc в Alpine при -static делает «перемещаемую» программу (static-pie),
+  # а musl-gcc к такой не готов — она падает при запуске. Обычная работает везде.
+  target_link_options(deps INTERFACE -static -no-pie)
 else()
   pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET ${DEPS_MODULES})
   target_link_libraries(deps INTERFACE PkgConfig::DEPS)
