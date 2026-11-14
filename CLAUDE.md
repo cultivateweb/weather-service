@@ -5,14 +5,19 @@ everything in C, tests included). README.md (Russian) is the user guide.
 
 ## Build and test
 
-- System libraries: `cmake -B build && cmake --build build && ctest --test-dir build`.
-  Memory check: `-DSANITIZE=ON` (clang works on Fedora as is; gcc needs libasan libubsan).
-- One static file from sources: `scripts/build-static.sh` (musl, LibreSSL, curl,
-  libmicrohttpd, cJSON, libpq, CA list) → `build-static/weather_service`.
+- Docker only — the owner wants nothing but Docker on the host (build stage: Alpine 3.24):
+  `docker compose up -d --build` (service + database, password in `.env`),
+  `docker compose run --rm --build test` (all 4 tests, db included),
+  `docker build --target file --output out .` (just the single static file).
+- Without Docker: `scripts/build-static.sh` (the same one-file build: musl, LibreSSL,
+  curl, libmicrohttpd, cJSON, libpq, CA list → `build-static/weather_service`), or system
+  libraries: `cmake -B build && cmake --build build && ctest --test-dir build`.
+  Memory check: `-DSANITIZE=ON` (clang works on Fedora as is; gcc needs libasan libubsan;
+  ASan does not work with musl, so it is not in Docker).
 - The `db` test needs `TEST_DB_URL` (a role allowed to CREATE DATABASE); without it
-  ctest reports Skipped. `docker compose up -d db` gives one, password in `.env`.
-- CI: `.github/workflows/tests.yml` — system build + ASan with a PostgreSQL service;
-  docker build + compose smoke test with a real Open-Meteo call.
+  ctest reports Skipped. The compose `test` service sets it.
+- CI: `.github/workflows/tests.yml` — Docker build, all tests via compose, smoke test
+  with a real Open-Meteo call; system build + ASan with a PostgreSQL service.
 
 ## Traps
 

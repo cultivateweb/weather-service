@@ -3,58 +3,53 @@
 Маленький сервис погоды на Си. Получает название города, спрашивает погоду
 у бесплатного сайта [Open-Meteo](https://open-meteo.com) (ключ не нужен)
 и отвечает температурой и ветром. Всё, что происходит, пишет в журнал:
-на экран, в файл `service.log` и, если задана база, в PostgreSQL.
+на экран, в файл и в базу PostgreSQL.
 
-Собрать можно двумя способами:
+На компьютере нужен только Docker: сборка, тесты и запуск идут внутри него.
+Программа собирается в один файл, которому не нужны библиотеки системы.
 
-- **одним файлом** — ничего не ставить в систему, программа не зависит от её библиотек;
-- **с библиотеками системы** — их ставят один раз, зато сборка быстрее.
-  Этот способ нужен и для проверки памяти.
-
-## Один файл без библиотек системы
+## Запуск
 
 ```sh
-scripts/build-static.sh
+echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env   # один раз: пароль базы
+docker compose up -d --build
+curl -d '{"city":"Київ"}' http://localhost:8080/weather
+docker compose logs app       # журнал сервиса
+docker compose down           # остановить; записи журнала в базе сохраняются
 ```
 
-Скрипт скачивает исходники библиотек (около 50 МБ), сверяет их контрольные
-суммы, собирает библиотеки, потом сам сервис, и запускает тесты. Ставить ничего
-не нужно — только инструменты сборки: gcc, make, cmake, pkg-config, curl, tar, gzip.
-Повторный запуск берёт уже собранные библиотеки.
+Пароль базы лежит в файле `.env`, в git он не попадает. Сервис и база видны
+только с этого компьютера (адрес 127.0.0.1).
 
-Результат — `build-static/weather_service`. В нём есть всё: библиотека языка Си
-(musl), шифрование (LibreSSL), curl, libmicrohttpd, cJSON, клиент PostgreSQL
-(libpq) и список центров сертификации — по нему программа проверяет, что говорит
+Сборка идёт внутри Docker, в Alpine Linux — маленькой системе с инструментами
+сборки. Скрипт `scripts/build-static.sh` скачивает там исходники библиотек,
+сверяет их контрольные суммы, собирает библиотеки, потом сервис, и запускает
+тесты. Собранные библиотеки Docker запоминает и в следующий раз не собирает заново.
+
+Образ сервиса пустой: в нём лежит только файл программы — ни оболочки,
+ни библиотек. Так видно, что одного файла программе достаточно.
+
+## Один файл программы
+
+```sh
+docker build --target file --output out .
+```
+
+Результат — `out/weather_service`. В нём есть всё: библиотека языка Си (musl),
+шифрование (LibreSSL), curl, libmicrohttpd, cJSON, клиент PostgreSQL (libpq)
+и список центров сертификации — по нему программа проверяет, что говорит
 с настоящим погодным сайтом. Этот файл можно скопировать на любой Linux
 с таким же процессором (здесь x86-64) и запустить — ставить там ничего не нужно.
 
-```sh
-file build-static/weather_service     # «statically linked» — всё внутри
-```
-
-## Сборка с библиотеками системы
-
-Библиотеки ставятся один раз. Fedora:
+## Тесты
 
 ```sh
-sudo dnf install gcc cmake pkgconf-pkg-config libmicrohttpd-devel libcurl-devel libpq-devel cjson-devel
+docker compose run --rm --build test
 ```
 
-Ubuntu / Debian:
-
-```sh
-sudo apt install build-essential cmake pkgconf libmicrohttpd-dev libcurl4-openssl-dev libpq-dev libcjson-dev
-```
-
-Сборка и тесты:
-
-```sh
-cmake -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-Тесты в интернет не ходят: вместо Open-Meteo отвечает подставной сайт внутри теста.
+Все четыре теста идут внутри Docker. Тест `db` работает с базой из `compose.yaml`:
+заводит себе отдельную базу и потом удаляет её, записи журнала не трогает.
+В интернет тесты не ходят: вместо Open-Meteo отвечает подставной сайт внутри теста.
 
 | Тест | Что проверяет |
 |---|---|
@@ -62,19 +57,6 @@ ctest --test-dir build --output-on-failure
 | `service` — `tests/test_service.c` | ответы сервера на настоящие запросы, журнал в файле, параллельную работу, быструю остановку |
 | `main` — `tests/test_main.c` | программу целиком: запуск, остановку сигналом, ошибки при старте |
 | `db` — `tests/test_db.c` | журнал в PostgreSQL: строки доходят до базы как есть, журнал переживает перезапуск базы |
-
-Тесту `db` нужна настоящая база (см. «База для журнала»). Без неё ctest
-пропускает его и пишет `Skipped`.
-
-## Запуск
-
-Из папки проекта (там лежит `config.env`):
-
-```sh
-./build/weather_service
-```
-
-Остановка — Ctrl+C. Другой файл настроек: `./build/weather_service my.env`.
 
 ## Запросы
 
@@ -99,13 +81,14 @@ curl -d '{"city":"Київ"}' http://localhost:8080/weather
 
 ## Настройки
 
-Сначала берутся значения по умолчанию, потом `config.env`, потом переменные
-окружения с теми же именами: `PORT=8081 ./build/weather_service`.
+Сначала берутся значения по умолчанию, потом файл `config.env`, потом переменные
+окружения с теми же именами. В Docker настройки сервиса задаются в `compose.yaml`,
+в разделе `environment` сервиса `app`.
 
 | Настройка | По умолчанию | Что это |
 |---|---|---|
 | `PORT` | `8080` | порт, на котором сервис принимает запросы (1–65535) |
-| `LOG_PATH` | `service.log` | файл журнала; пусто — без файла |
+| `LOG_PATH` | `service.log` | файл журнала; пусто — без файла (так в Docker) |
 | `DB_URL` | пусто | адрес базы PostgreSQL для журнала (таблица `logs`); пусто — без базы. Пароль — в переменной `PGPASSWORD`, не в адресе |
 | `WEATHER_URL` | `https://api.open-meteo.com/v1/forecast` | адрес прогноза |
 | `GEO_URL` | `https://geocoding-api.open-meteo.com/v1/search` | адрес поиска города |
@@ -116,60 +99,60 @@ curl -d '{"city":"Київ"}' http://localhost:8080/weather
 существовать. Без аргумента и без `config.env` сервис работает на значениях
 по умолчанию и говорит об этом.
 
-## База для журнала (PostgreSQL)
-
-Без базы сервис тоже работает: журнал идёт на экран и в файл. Базу проще всего
-поднять в Docker — файл `compose.yaml` уже готов:
-
-```sh
-echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env   # один раз: пароль базы
-docker compose up -d db
-```
-
-Пароль лежит в файле `.env`, в git он не попадает. Запуск сервиса с журналом в базе:
-
-```sh
-export PGPASSWORD=$(sed -n 's/^POSTGRES_PASSWORD=//p' .env)
-DB_URL=postgresql://weather@127.0.0.1:5432/weather ./build/weather_service
-```
-
-Тест базы — с той же базой (он заводит себе отдельную базу и потом удаляет её):
-
-```sh
-TEST_DB_URL=postgresql://weather@127.0.0.1:5432/weather ctest --test-dir build --output-on-failure
-```
-
-Если связь с базой оборвалась, журнал переподключается сам. Пока базы нет,
-строки идут только на экран и в файл.
-
-## Docker: сервис вместе с базой
-
-```sh
-echo "POSTGRES_PASSWORD=$(tr -dc a-z0-9 </dev/urandom | head -c 24)" > .env   # один раз, если .env ещё нет
-docker compose up -d --build
-curl -d '{"city":"Київ"}' http://localhost:8080/weather
-docker compose logs app       # журнал сервиса
-docker compose down           # остановить; записи журнала в базе сохраняются
-```
-
-Образ сервиса собирается из исходников тем же `scripts/build-static.sh`, а сам
-он пустой: в нём лежит только файл программы — ни оболочки, ни библиотек.
-Так видно, что одного файла программе достаточно.
-
-Только файл программы, без образа (появится в `out/weather_service`):
-
-```sh
-docker build --target file --output out .
-```
-
 ## Журнал
 
 ```sh
-cat service.log
+docker compose logs app
 docker compose exec db psql -U weather -d weather -c "SELECT ts, level, message FROM logs ORDER BY id"
 ```
 
-## Проверка памяти
+Если связь с базой оборвалась, журнал переподключается сам. Пока базы нет,
+строки идут только на экран (и в файл, если он задан).
+
+## Без Docker
+
+Тот же скрипт работает и прямо в системе, если в ней есть инструменты сборки:
+bash, gcc, make, cmake, pkg-config, curl, tar, gzip.
+
+```sh
+scripts/build-static.sh       # результат — build-static/weather_service
+```
+
+Или сборка с библиотеками системы — их ставят один раз. Fedora:
+
+```sh
+sudo dnf install gcc cmake pkgconf-pkg-config libmicrohttpd-devel libcurl-devel libpq-devel cjson-devel
+```
+
+Ubuntu / Debian:
+
+```sh
+sudo apt install build-essential cmake pkgconf libmicrohttpd-dev libcurl4-openssl-dev libpq-dev libcjson-dev
+```
+
+Сборка, тесты и запуск — из папки проекта (там лежит `config.env`):
+
+```sh
+cmake -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+./build/weather_service       # остановка — Ctrl+C; другой файл настроек: ./build/weather_service my.env
+```
+
+Без базы тест `db` пропускается и ctest пишет `Skipped`. С базой из Docker:
+
+```sh
+docker compose up -d db
+export PGPASSWORD=$(sed -n 's/^POSTGRES_PASSWORD=//p' .env)
+TEST_DB_URL=postgresql://weather@127.0.0.1:5432/weather ctest --test-dir build --output-on-failure
+DB_URL=postgresql://weather@127.0.0.1:5432/weather ./build/weather_service    # журнал в базу
+```
+
+Так запущенный сервис принимает запросы со всех сетевых адресов компьютера,
+пароля нет. Брандмауэр Fedora Workstation по умолчанию пропускает порты выше
+1024, поэтому сервис видят другие устройства в той же сети.
+
+### Проверка памяти
 
 Сборка с AddressSanitizer и UBSan: они ловят выход за границы памяти, утечки
 и неопределённое поведение. Нужен clang (Fedora: `sudo dnf install clang compiler-rt`).
@@ -181,15 +164,17 @@ ctest --test-dir build-check --output-on-failure
 ```
 
 Можно и с gcc (без `CC=clang`), но тогда на Fedora нужны пакеты `libasan` и `libubsan`.
+В Docker этой проверки нет: с библиотекой musl она не работает. Её делает GitHub.
 
 ## Автоматические тесты на GitHub
 
 При каждой отправке изменений на GitHub (`git push`) там сами запускаются
 проверки из файла `.github/workflows/tests.yml`:
 
-- сборка с библиотеками Ubuntu (те же пакеты, что выше) и все тесты, вместе с тестом базы;
-- та же сборка с проверкой памяти;
-- образ Docker из исходников: сервис с базой, настоящий запрос погоды, запись журнала в базу.
+- сборка в Docker, как выше: все тесты вместе с тестом базы, потом сервис с базой,
+  настоящий запрос погоды и запись журнала в базу;
+- сборка с библиотеками Ubuntu (те же пакеты, что выше) и все тесты;
+- та же сборка с проверкой памяти.
 
 Сайт погоды машинам GitHub отвечает не всегда. Если он молчит и самой машине,
 проверка не проваливается, а оставляет жёлтое предупреждение. Красный крестик —
@@ -197,10 +182,3 @@ ctest --test-dir build-check --output-on-failure
 
 Результаты — на вкладке [Actions](https://github.com/cultivateweb/weather-service/actions).
 Там же, в разделе Artifacts, лежит готовый файл программы `weather_service`.
-
-## Безопасность
-
-Сервис принимает запросы со всех сетевых адресов компьютера, пароля нет.
-Брандмауэр Fedora Workstation по умолчанию пропускает порты выше 1024, поэтому
-запущенный сервис видят другие устройства в той же сети.
-Сервис и база из `compose.yaml` видны только с этого компьютера (адрес 127.0.0.1).
